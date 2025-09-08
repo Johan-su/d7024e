@@ -1,7 +1,7 @@
 package kademlia
 
 import (
-
+	"d7024e/internal/kademlia"
 	"fmt"
 	"testing"
 )
@@ -12,18 +12,28 @@ func TestRoutingTable(t *testing.T) {
 
 	amountOfContacts := 15
 
-	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
+	rt := kademlia.NewRoutingTable(kademlia.NewContact(kademlia.NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
 
 	for i := 0; i < amountOfContacts; i++ {
-		
 		stringI := fmt.Sprintf("%02d", i)
-		contact := NewContact(NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
+		contact := kademlia.NewContact(kademlia.NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
 		rt.AddContact(contact)
 		rt.AddContact(contact) // adding duplicate contact
 	}
 
-	contacts := rt.FindClosestContacts(NewKademliaID("2111111400000000000000000000000000000000"), 20)
+	
+	//Check closest contact is correct
 
+	closestContact := rt.FindClosestContacts(kademlia.NewKademliaID("0000000100000000000000000000000000000000"), 1)
+	
+	if closestContact[0].ID.String() != "0000000100000000000000000000000000000000" {
+		t.Fatalf("Expected closest contact to be 0000000100000000000000000000000000000000, got %s", closestContact[0].ID.String())
+	}
+	
+
+
+	
+	contacts := rt.FindClosestContacts(kademlia.NewKademliaID("2111111400000000000000000000000000000000"), amountOfContacts)
 
 
 	for i := range contacts {
@@ -45,7 +55,7 @@ func TestRoutingTable(t *testing.T) {
 
 	for i := 0; i < amountOfContacts; i++ {
 		stringI := fmt.Sprintf("%02d", i)
-		expectedContact := NewContact(NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
+		expectedContact := kademlia.NewContact(kademlia.NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
 		found := false
 		for _, contact := range contacts {
 			if contact.ID.String() == expectedContact.ID.String() {
@@ -65,7 +75,7 @@ func TestRoutingTable(t *testing.T) {
 		uniqueContacts[contact.ID.String()] = struct{}{}
 	}
 	if len(uniqueContacts) != len(contacts) {
-		t.Fatal("Expected no duplicate contacts")
+		t.Fatal("Expected no duplicate contacts") 
 	}
 
 
