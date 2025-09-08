@@ -21,8 +21,19 @@ func TestRoutingTable(t *testing.T) {
 		rt.AddContact(contact) // adding duplicate contact
 	}
 
-	contacts := rt.FindClosestContacts(kademlia.NewKademliaID("2111111400000000000000000000000000000000"), 20)
+	
+	//Check closest contact is correct
 
+	closestContact := rt.FindClosestContacts(kademlia.NewKademliaID("0000000100000000000000000000000000000000"), 1)
+	
+	if closestContact[0].ID.String() != "0000000100000000000000000000000000000000" {
+		t.Fatalf("Expected closest contact to be 0000000100000000000000000000000000000000, got %s", closestContact[0].ID.String())
+	}
+	
+
+
+	
+	contacts := rt.FindClosestContacts(kademlia.NewKademliaID("2111111400000000000000000000000000000000"), amountOfContacts)
 
 
 	for i := range contacts {
@@ -64,7 +75,7 @@ func TestRoutingTable(t *testing.T) {
 		uniqueContacts[contact.ID.String()] = struct{}{}
 	}
 	if len(uniqueContacts) != len(contacts) {
-		t.Fatal("Expected no duplicate contacts")
+		t.Fatal("Expected no duplicate contacts") 
 	}
 
 
