@@ -2,7 +2,6 @@ package kademlia
 
 import (
 	"testing"
-	"fmt"
 )
 
 func mockKademliaID(val byte) *KademliaID {
