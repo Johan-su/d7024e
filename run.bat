@@ -1,5 +1,5 @@
 @echo off
-
+setlocal
 
 @REM run build to build
 @REM run docker to run
