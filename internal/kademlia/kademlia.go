@@ -9,13 +9,23 @@ import (
 
 type Kademlia struct {
 	routingTable *RoutingTable
-	network      *Network
+	kv_store map[KademliaID][]byte
+	net Network
+}
+
+func newKademlia() Kademlia {
+	var k Kademlia
+	
+	k.routingTable = new(RoutingTable)
+	k.kv_store = make(map[KademliaID][]byte) 
+	return k
 }
 
 const alpha = 3
 
-func (kademlia *Kademlia) LookupData(hash string) {
+func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool) {
 	// TODO
+	return nil, false
 }
 
 func (kademlia *Kademlia) Store(data []byte) {
