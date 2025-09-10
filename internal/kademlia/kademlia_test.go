@@ -3,25 +3,21 @@ package kademlia
 import (
 	"fmt"
 	"testing"
-	"strconv"
 )
 
 func TestKademlia(t *testing.T) {
 
-	network := NewMockNetwork()
+	network := NewMockNetwork(1000)
 
-	var nodes []Kademlia
-	for i := 0; i < 1000; i += 1 {
-		address :=fmt.Sprintf("%d", i)
-		nodes = append(nodes, NewKademlia(NewMockNode(address, &network)))
-	} 
-
-	for _, node := range nodes {
+	for _, node := range network.nodes {
 		go node.HandleResponse()
 	}
 
-	network.nodes[fmt.Sprintf("%d", 5)]
-	//TODO finish
+	network.nodes[5].SendPingMessage("15")
+
+	network.ExpectReceive("15", RPCTypePing)
+	network.ExpectSend("15", RPCTypePingReply)
+	network.ExpectReceive("5", RPCTypePingReply)
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
