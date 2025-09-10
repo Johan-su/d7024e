@@ -15,7 +15,7 @@ func TestLookupLogicWithoutNetwork(t *testing.T) {
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
-		network:      &Network{},
+		network:      &Node{},
 	}
 
 	// add the node itself to its routing table

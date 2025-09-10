@@ -21,15 +21,8 @@ func main() {
 	// fmt.Printf("%v\n", contact)
 
 
-	var net kademlia.Network
-	net = kademlia.NewIP()
-
-	channel := make(chan kademlia.Response)
-
-	go net.Listen("0.0.0.0", 8000, channel)
-
-	node := kademlia.NewKademlia()
-	node.HandleResponse(channel)
+	node := kademlia.NewKademlia(kademlia.NewUDPNetwork("0.0.0.0", 8000))
+	node.HandleResponse()
 
 
 	for {}
