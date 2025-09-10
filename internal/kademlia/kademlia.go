@@ -13,21 +13,22 @@ type Kademlia struct {
 
 const alpha = 3
 
-func (kademlia *Kademlia) LookupContact(target *Contact, count int) []Contact {
+func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 	//
-	return kademlia.LookupContactInternal(target, count, kademlia.mockQueryNodes)
+	return kademlia.LookupContactInternal(target, kademlia.mockQueryNodes)
 
 }
 
 func (kademlia *Kademlia) LookupContactInternal(
 	target *Contact,
-	count int,
 	queryFn func([]Contact, *KademliaID) map[Contact][]Contact, //function that will return the queried Node and its Contacts
 ) []Contact {
 
+	// "The first alpha contacts selected are used to create a shortlist for the search."
 	initalCandidates := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
 	shortlist := make([]Contact, len(initalCandidates))
 	copy(shortlist, initalCandidates)
+
 	//write sorting helper
 	sortByDistance(shortlist, target.ID)
 	queried := make(map[string]bool)
@@ -35,7 +36,7 @@ func (kademlia *Kademlia) LookupContactInternal(
 	unchangedRounds := 0
 
 	for unchangedRounds < 3 {
-		toQuery := selectUnqueriedNodes(shortlist, queried, alpha) // helper to select nodes that hasnt been queried already
+		toQuery := selectUnqueriedNodes(shortlist, queried, bucketSize) // helper to select nodes that hasnt been queried already
 
 		for _, contact := range toQuery {
 			queried[contact.ID.String()] = true
@@ -50,7 +51,7 @@ func (kademlia *Kademlia) LookupContactInternal(
 		responseMap := queryFn(toQuery, target.ID) // mock until real with network is implemented
 
 		for _, newContacts := range responseMap {
-			shortlist = mergeAndSort(shortlist, newContacts, target.ID, count)
+			shortlist = mergeAndSort(shortlist, newContacts, target.ID)
 		}
 
 		if shortlist[0].ID.Equals(oldClosest.ID) {
@@ -60,7 +61,7 @@ func (kademlia *Kademlia) LookupContactInternal(
 		}
 
 	}
-	return getTopContacts(shortlist, count)
+	return getTopContacts(shortlist, bucketSize)
 
 }
 
@@ -74,7 +75,7 @@ func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) [
 	return result
 }
 
-func mergeAndSort(shortlist, newContacts []Contact, target *KademliaID, maxsize int) []Contact {
+func mergeAndSort(shortlist, newContacts []Contact, target *KademliaID) []Contact {
 	combined := append(shortlist, newContacts...)
 
 	seen := make(map[string]bool)
@@ -93,8 +94,8 @@ func mergeAndSort(shortlist, newContacts []Contact, target *KademliaID, maxsize 
 	sort.Slice(unique, func(i, j int) bool {
 		return unique[i].Less(&unique[j])
 	})
-	if len(unique) > maxsize {
-		return unique[:maxsize]
+	if len(unique) > bucketSize {
+		return unique[:bucketSize]
 	}
 	return unique
 }
