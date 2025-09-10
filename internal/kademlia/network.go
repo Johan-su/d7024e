@@ -4,6 +4,7 @@ import (
 	"net"
 	"log"
 	"fmt"
+	"sync"
 )
 
 type Response struct {
@@ -16,20 +17,19 @@ type Node interface {
 	SendData(recipient *Contact, data []byte)
 }
 
-
 type UDPNode struct {
 	listen_ip string
 	listen_port int
 }
 
-
 type MockNetwork struct {
+	mu sync.Mutex
 	ip_to_queue map[string]chan Response
 }
 
-
 func NewMockNetwork() MockNetwork {
-	n := MockNetwork{make(map[string]chan Response)}
+	var n MockNetwork
+	n.ip_to_queue = make(map[string]chan Response)
 	return n
 }
 
@@ -38,22 +38,24 @@ type MockNode struct {
 	network *MockNetwork	
 }
 
-func NewMockNode(listen_ip string, network *MockNetwork ) Node {
+func NewMockNode(listen_ip string, network *MockNetwork) Node {
 	node := new(MockNode)
 	node.listen_ip = listen_ip
 	node.network = network
 	return node
 }
 
-// TODO: make channel buffe count global constant
+// TODO: make channel buffer count global constant
 func (node *MockNode) Listen() Response {
 
 	fmt.Printf("listening...\n")
-	// TODO: maybe send data should create the channel instead of listen
+	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[node.listen_ip]
 	if channel == nil {
 		node.network.ip_to_queue[node.listen_ip] = make(chan Response, 8)	
+		channel = node.network.ip_to_queue[node.listen_ip]
 	}
+	node.network.mu.Unlock()
 	rep := <- channel
 	n := len(rep.data)
 	fmt.Printf("Received %v bytes %v\n", n, string(rep.data[0:n - 1]))
@@ -61,7 +63,9 @@ func (node *MockNode) Listen() Response {
 }
 	
 func (node *MockNode) SendData(recipient *Contact, data []byte) {
+	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[recipient.Address]
+	node.network.mu.Unlock()
 	if channel != nil {
 		channel <- Response{recipient.Address, data} 
 	}
