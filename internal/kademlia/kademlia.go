@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 )
@@ -81,6 +82,32 @@ func (kademlia *Kademlia) LookupContactInternal(
 	}
 	return getTopContacts(shortlist, bucketSize)
 
+}
+
+func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
+	responseMap := make(map[Contact][]Contact)
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
+
+	for _, contact := range contactsToQuery {
+		wg.Add(1)
+		go func(c Contact) {
+			defer wg.Done()
+
+			foundContacts, err := kademlia.network.SendFindContactMessage(&c, targetID)
+			if err != nil {
+				log.Printf("Failed to query node %s: %v\n", c.Address, err)
+				return
+			}
+
+			mutex.Lock()
+			responseMap[c] = foundContacts
+			mutex.Unlock()
+		}(contact)
+	}
+
+	wg.Wait()
+	return responseMap
 }
 
 func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) []Contact {
