@@ -13,9 +13,17 @@ type Kademlia struct {
 
 const alpha = 3
 
+func (kademlia *Kademlia) LookupData(hash string) {
+	// TODO
+}
+
+func (kademlia *Kademlia) Store(data []byte) {
+	// TODO
+}
+
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 	//
-	return kademlia.LookupContactInternal(target, kademlia.mockQueryNodes)
+	return kademlia.LookupContactInternal(target, kademlia.mockQueryNodes) // TODO: change to real func that uses SendFindContactMessage to find contact nodes
 
 }
 
