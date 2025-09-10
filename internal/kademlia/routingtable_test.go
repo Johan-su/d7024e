@@ -5,15 +5,21 @@ import (
 	"testing"
 )
 
-
-func TestFindClosestContact(t *testing.T) { // should probalbly be updated to include more contacts
+func TestFindClosestContact(t *testing.T) {
 	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
-	contact := NewContact(NewKademliaID("0000000100000000000000000000000000000000"), "localhost:8001")
-	rt.AddContact(contact)
-	closestContact := rt.FindClosestContacts(NewKademliaID("0000000100000000000000000000000000000000"), 1)
+	contacts := []Contact{
+		NewContact(NewKademliaID("0000000100000000000000000000000000000000"), "localhost:8001"),
+		NewContact(NewKademliaID("0000000200000000000000000000000000000000"), "localhost:8002"),
+		NewContact(NewKademliaID("0000000300000000000000000000000000000000"), "localhost:8003"),
+		NewContact(NewKademliaID("0000000400000000000000000000000000000000"), "localhost:8004"),
+	}
+	for _, c := range contacts {
+		rt.AddContact(c)
+	}
+	closestContact := rt.FindClosestContacts(NewKademliaID("0000000200000000000000000000000000000000"), 1)
 
-	if closestContact[0].ID.String() != "0000000100000000000000000000000000000000" {
-		t.Fatalf("Expected closest contact to be 0000000100000000000000000000000000000000, got %s", closestContact[0].ID.String())
+	if closestContact[0].ID.String() != "0000000200000000000000000000000000000000" {
+		t.Fatalf("Expected closest contact to be 0000000200000000000000000000000000000000, got %s", closestContact[0].ID.String())
 	}
 }
 
