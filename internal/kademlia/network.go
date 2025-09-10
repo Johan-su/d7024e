@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 )
 
-type RPCType uint16
+type RPCType uint8
 const (
 	RPCTypeInvalid = iota
 	RPCTypePing
@@ -26,7 +26,38 @@ const (
 	RPCErrorLackOfSpace
 )
 
-type Network struct {
+type Response struct {
+	from_address string
+	data []byte
+}
+
+type Network interface {
+	Listen(ip string, port int, channel chan Response)
+	SendPingMessage(recipient *Contact)
+	SendFindContactMessage(recipient *Contact, key *KademliaID)
+	SendFindDataMessage(recipient *Contact, hash string) 
+	SendStoreMessage(recipient *Contact, data []byte)
+	SendPingReplyMessage(recipient *Contact, id *KademliaID) 
+	SendFindContactReplyMessage(recipient *Contact, id *KademliaID, contacts []Contact) 
+	SendFindDataReplyMessage(recipient *Contact, id *KademliaID, data []byte, contacts []Contact) 
+	SendStoreReplyMessage(recipient *Contact, id *KademliaID, err RPCError) 
+	
+	
+	
+}
+
+
+type IPNetwork struct {
+}
+
+type MockNetwork struct {
+	net map[KademliaID]Kademlia
+}
+
+func NewIP() Network {
+
+	ip := new(IPNetwork)
+	return ip
 }
 
 
@@ -42,7 +73,6 @@ type RPCPing struct {
 
 type RPCStore struct {
 	header RPCHeader
-	data_hash KademliaID
 	data_size uint64
 	data []byte
 }
@@ -65,29 +95,24 @@ type RPCStoreReply struct {
 	header RPCHeader
 }
 
-type Triple struct {
-	address [4]uint8
-	port uint16
-	node_id KademliaID 
-}
-
 type RPCFindNodeReply struct {
 	header RPCHeader
-	triple_count uint8	
-	triples []Triple
+	contact_count uint16	
+	contacts []Contact
 }
 
 // returns either data or triples
 type RPCFindValueReply struct {
 	header RPCHeader
 	data_size uint64
-	triple_count uint8
+	contact_count uint16
 	data []byte
-	triples []Triple
+	contacts []Contact
 }
 
-func Listen(ip string, port int) {
 
+
+func (network *IPNetwork) Listen(ip string, port int, channel chan Response) {
 	addr := net.UDPAddr{Port: port, IP: net.ParseIP(ip)}
 	
 	for {
@@ -103,83 +128,10 @@ func Listen(ip string, port int) {
 			log.Fatalf("Failed to read packet %v\n", err)
 		}
 
-		s_buf := string(buf[0:n - 1])
+		fmt.Printf("Received %v bytes %v\n", n, string(buf[0:n - 1]))
 
-		fmt.Printf("Received %v bytes %v\n", n, s_buf)
-		
-		if (s_buf == "ping") {
-			fmt.Printf("writing ping...\n")
-			_, err := conn.WriteTo([]byte("pong"), rec_addr)
-			if err != nil {
-				log.Fatalf("write error %v\n", err)
-			}
-			continue
-		}
-		
-		var header RPCHeader
-		binary.Decode(buf, binary.BigEndian, header)
-		// receiving
-		switch header.typ {
-			case RPCTypeInvalid: {
-				log.Printf("Got Invalid RPC\n")
-			}
-			case RPCTypePing: {
-				var rpc RPCPingReply
-				rpc.header.typ = RPCTypePingReply
-				rpc.header.id = *NewRandomKademliaID()
-				write_buf, err := binary.Append(nil, binary.BigEndian, rpc)
-				if err != nil {
-					log.Fatalf("Failed %v\n", err)
-				}
-				_, err = conn.WriteTo(write_buf, rec_addr)
-				if err != nil {
-					log.Fatalf("RPC ping write error %v\n", err)
-				}
-			}
-			case RPCTypeStore: {
-				var store RPCStore
-				binary.Decode(buf, binary.BigEndian, store)
-
-				panic("TODO receive Store RPC")
-			}
-			case RPCTypeFindNode: {
-				var find_node RPCFindNode
-				binary.Decode(buf, binary.BigEndian, find_node)
-
-				panic("TODO Find node RPC")
-			}
-			case RPCTypeFindValue: {
-				var find_value RPCFindValue
-				binary.Decode(buf, binary.BigEndian, find_value)
-
-				panic("TODO Find value RPC")
-			}
-			case RPCTypePingReply: {
-				var ping_reply RPCPingReply
-				binary.Decode(buf, binary.BigEndian, ping_reply)
-				// update bucket
-				panic("TODO update bucket when receiving ping reply")
-			}
-			case RPCTypeStoreReply: {
-				var store_reply RPCStoreReply
-				binary.Decode(buf, binary.BigEndian, store_reply)
-				// update bucket
-				panic("TODO Store RPC reply")
-			}
-			case RPCTypeFindNodeReply: {
-				var find_node_reply RPCFindNodeReply
-				binary.Decode(buf, binary.BigEndian, find_node_reply)
-				// update bucket
-				panic("TODO find node RPC reply")
-			}
-			case RPCTypeFindValueReply: {
-				var find_value_reply RPCFindValueReply
-				binary.Decode(buf, binary.BigEndian, find_value_reply)
-				// update bucket
-				panic("TODO find value RPC reply")
-			}
-		}
 		conn.Close()
+		channel <- Response{rec_addr.String(), buf}
 	}
 }
 
@@ -196,7 +148,7 @@ func SendData(recipient *Contact, data []byte) {
 	}
 }
 
-func (network *Network) SendPingMessage(recipient *Contact) {
+func (network *IPNetwork) SendPingMessage(recipient *Contact) {
 	var rpc RPCPing
 	rpc.header.typ = RPCTypePing
 	rpc.header.id = *NewRandomKademliaID()
@@ -206,7 +158,7 @@ func (network *Network) SendPingMessage(recipient *Contact) {
 	SendData(recipient, write_buf)
 }
 
-func (network *Network) SendFindContactMessage(recipient *Contact, key *KademliaID) {
+func (network *IPNetwork) SendFindContactMessage(recipient *Contact, key *KademliaID) {
 	var rpc RPCFindNode
 	rpc.header.typ = RPCTypeFindNode
 	rpc.header.id = *NewRandomKademliaID()
@@ -219,7 +171,7 @@ func (network *Network) SendFindContactMessage(recipient *Contact, key *Kademlia
 	SendData(recipient, write_buf)
 }
 
-func (network *Network) SendFindDataMessage(recipient *Contact, hash string) {
+func (network *IPNetwork) SendFindDataMessage(recipient *Contact, hash string) {
 	var rpc RPCFindValue
 	rpc.header.typ = RPCTypeFindValue
 	rpc.header.id = *NewRandomKademliaID()
@@ -231,12 +183,11 @@ func (network *Network) SendFindDataMessage(recipient *Contact, hash string) {
 	SendData(recipient, write_buf)
 }
 
-func (network *Network) SendStoreMessage(recipient *Contact, data []byte) {
+func (network *IPNetwork) SendStoreMessage(recipient *Contact, data []byte) {
 	var rpc RPCStore
 	rpc.header.typ = RPCTypeStore
 	rpc.header.id = *NewRandomKademliaID()
 	
-	rpc.data_hash = *NewKademliaID(string(data))
 	rpc.data_size = uint64(len(data))
 	rpc.data = data
 
@@ -244,3 +195,54 @@ func (network *Network) SendStoreMessage(recipient *Contact, data []byte) {
 
 	SendData(recipient, write_buf)
 }
+
+func (network *IPNetwork) SendPingReplyMessage(recipient *Contact, id *KademliaID) {
+	var rpc RPCPingReply
+	rpc.header.typ = RPCTypePingReply
+	rpc.header.id = *id
+
+	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
+
+	SendData(recipient, write_buf)
+}
+
+func (network *IPNetwork) SendFindContactReplyMessage(recipient *Contact, id *KademliaID, contacts []Contact) {
+	var rpc RPCFindNodeReply
+	rpc.header.typ = RPCTypeFindNodeReply
+	rpc.header.id = *id
+
+	rpc.contact_count = uint16(len(contacts))
+	rpc.contacts = contacts
+
+	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
+
+	SendData(recipient, write_buf)
+}
+
+func (network *IPNetwork) SendFindDataReplyMessage(recipient *Contact, id *KademliaID, data []byte, contacts []Contact) {
+	var rpc RPCFindValueReply
+	rpc.header.typ = RPCTypeFindValue
+	rpc.header.id = *id
+
+	rpc.data_size = uint64(len(data))
+	rpc.contact_count = uint16(len(contacts))
+
+	rpc.data = data
+	rpc.contacts = contacts
+
+	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
+
+	SendData(recipient, write_buf)
+}
+
+func (network *IPNetwork) SendStoreReplyMessage(recipient *Contact, id *KademliaID, err RPCError) {
+	var rpc RPCStoreReply
+	rpc.header.typ = RPCTypeStoreReply
+	rpc.header.id = *id
+	rpc.header.rpc_error = err
+
+	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
+
+	SendData(recipient, write_buf)
+}
+

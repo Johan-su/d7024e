@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"encoding/binary"
 )
 
 type Kademlia struct {
@@ -13,7 +14,7 @@ type Kademlia struct {
 	net Network
 }
 
-func newKademlia() Kademlia {
+func NewKademlia() Kademlia {
 	var k Kademlia
 	
 	k.routingTable = new(RoutingTable)
@@ -22,6 +23,77 @@ func newKademlia() Kademlia {
 }
 
 const alpha = 3
+
+func (kademlia *Kademlia) HandleResponse(channel chan Response) {
+	for {
+		response := <- channel
+		var header RPCHeader
+		binary.Decode(response.data, binary.BigEndian, header)
+		// receiving
+		switch header.typ {
+			case RPCTypeInvalid: {
+				log.Printf("Got Invalid RPC\n")
+			}
+			case RPCTypePing: {
+				kademlia.net.SendPingReplyMessage(&Contact{nil, response.from_address, nil}, &header.id)
+				// TODO maybe update bucket
+			}
+			case RPCTypeStore: {
+				var store RPCStore
+				binary.Decode(response.data, binary.BigEndian, store)
+				
+				kademlia.Store(store.data)
+				// TODO maybe send back a error if it failed to store
+				kademlia.net.SendStoreReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, RPCErrorNoError)
+			}
+			case RPCTypeFindNode: {
+				var find_node RPCFindNode
+				binary.Decode(response.data, binary.BigEndian, find_node)
+				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
+				kademlia.net.SendFindContactReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, contacts)
+			}
+			case RPCTypeFindValue: {
+				var find_value RPCFindValue
+				binary.Decode(response.data, binary.BigEndian, find_value)
+				
+				var bytes []byte
+				var contacts []Contact
+
+				bytes, ok := kademlia.LookupData(find_value.target_key_id.String())
+				if !ok {
+					contacts = kademlia.routingTable.FindClosestContacts(&find_value.target_key_id, bucketSize)
+				}
+				kademlia.net.SendFindDataReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, bytes, contacts)
+			}
+			case RPCTypePingReply: {
+				var ping_reply RPCPingReply
+				binary.Decode(response.data, binary.BigEndian, ping_reply)
+				// update bucket
+				panic("TODO update bucket when receiving ping reply")
+			}
+			case RPCTypeStoreReply: {
+				var store_reply RPCStoreReply
+				binary.Decode(response.data, binary.BigEndian, store_reply)
+				// update bucket
+	
+				panic("TODO Store RPC reply")
+			}
+			case RPCTypeFindNodeReply: {
+				var find_node_reply RPCFindNodeReply
+				binary.Decode(response.data, binary.BigEndian, find_node_reply)
+				// update bucket
+				panic("TODO find node RPC reply")
+			}
+			case RPCTypeFindValueReply: {
+				var find_value_reply RPCFindValueReply
+				binary.Decode(response.data, binary.BigEndian, find_value_reply)
+				// update bucket
+				panic("TODO find value RPC reply")
+			}
+		}
+
+	}
+}
 
 func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool) {
 	// TODO
@@ -84,31 +156,31 @@ func (kademlia *Kademlia) LookupContactInternal(
 
 }
 
-func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
-	responseMap := make(map[Contact][]Contact)
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
+// func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
+// 	responseMap := make(map[Contact][]Contact)
+// 	var wg sync.WaitGroup
+// 	var mutex sync.Mutex
 
-	for _, contact := range contactsToQuery {
-		wg.Add(1)
-		go func(c Contact) {
-			defer wg.Done()
+// 	for _, contact := range contactsToQuery {
+// 		wg.Add(1)
+// 		go func(c Contact) {
+// 			defer wg.Done()
 
-			foundContacts, err := kademlia.network.SendFindContactMessage(&c, targetID)
-			if err != nil {
-				log.Printf("Failed to query node %s: %v\n", c.Address, err)
-				return
-			}
+// 			foundContacts, err := kademlia.net.SendFindContactMessage(&c, targetID)
+// 			if err != nil {
+// 				log.Printf("Failed to query node %s: %v\n", c.Address, err)
+// 				return
+// 			}
 
-			mutex.Lock()
-			responseMap[c] = foundContacts
-			mutex.Unlock()
-		}(contact)
-	}
+// 			mutex.Lock()
+// 			responseMap[c] = foundContacts
+// 			mutex.Unlock()
+// 		}(contact)
+// 	}
 
-	wg.Wait()
-	return responseMap
-}
+// 	wg.Wait()
+// 	return responseMap
+// }
 
 func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) []Contact {
 	var result []Contact
