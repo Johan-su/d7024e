@@ -3,19 +3,34 @@ package kademlia
 import (
 	"fmt"
 	"testing"
+	"strconv"
 )
 
 func TestKademlia(t *testing.T) {
-	// TODO: Add actual Kademlia tests
-	t.Log("Kademlia test placeholder")
+
+	network := NewMockNetwork()
+
+	var nodes []Kademlia
+	for i := 0; i < 1000; i += 1 {
+		address :=fmt.Sprintf("%d", i)
+		nodes = append(nodes, NewKademlia(NewMockNode(address, &network)))
+	} 
+
+	for _, node := range nodes {
+		go node.HandleResponse()
+	}
+
+	network.nodes[fmt.Sprintf("%d", 5)]
+	//TODO finish
 }
 
-func TestLookupLogicWithoutNetwork(t *testing.T) {
+func TestLookupLogicMockNetwork(t *testing.T) {
 	// xreate a mock Kademlia node
+	network := NewMockNetwork()
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
-		network:      &Node{},
+		net: NewMockNode("localhost", &network),
 	}
 
 	// add the node itself to its routing table

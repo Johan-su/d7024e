@@ -21,9 +21,9 @@ func main() {
 	// fmt.Printf("%v\n", contact)
 
 
-	node := kademlia.NewKademlia(kademlia.NewUDPNetwork("0.0.0.0", 8000))
+	node := kademlia.NewKademlia(kademlia.NewUDPNode("0.0.0.0", 8000))
 	node.HandleResponse()
 
-
+	fmt.Println("Entering infinite loop")
 	for {}
 }

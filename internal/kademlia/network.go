@@ -7,13 +7,13 @@ import (
 	"sync"
 )
 
-type Response struct {
-	from_address string
+type Message struct {
+	address string
 	data []byte
 }
 
 type Node interface {
-	Listen() Response
+	Listen() Message
 	SendData(recipient *Contact, data []byte)
 }
 
@@ -24,18 +24,20 @@ type UDPNode struct {
 
 type MockNetwork struct {
 	mu sync.Mutex
-	ip_to_queue map[string]chan Response
+	ip_to_queue map[string]chan Message
 }
 
 func NewMockNetwork() MockNetwork {
 	var n MockNetwork
-	n.ip_to_queue = make(map[string]chan Response)
+	n.ip_to_queue = make(map[string]chan Message)
 	return n
 }
 
 type MockNode struct {
 	listen_ip string
 	network *MockNetwork	
+	send_intercept chan Message
+	receive_intercept chan Message 
 }
 
 func NewMockNode(listen_ip string, network *MockNetwork) Node {
@@ -46,13 +48,13 @@ func NewMockNode(listen_ip string, network *MockNetwork) Node {
 }
 
 // TODO: make channel buffer count global constant
-func (node *MockNode) Listen() Response {
+func (node *MockNode) Listen() Message {
 
 	fmt.Printf("listening...\n")
 	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[node.listen_ip]
 	if channel == nil {
-		node.network.ip_to_queue[node.listen_ip] = make(chan Response, 8)	
+		node.network.ip_to_queue[node.listen_ip] = make(chan Message, 8)	
 		channel = node.network.ip_to_queue[node.listen_ip]
 	}
 	node.network.mu.Unlock()
@@ -67,11 +69,11 @@ func (node *MockNode) SendData(recipient *Contact, data []byte) {
 	channel := node.network.ip_to_queue[recipient.Address]
 	node.network.mu.Unlock()
 	if channel != nil {
-		channel <- Response{recipient.Address, data} 
+		channel <- Message{recipient.Address, data} 
 	}
 }
 
-func NewUDPNetwork(listen_ip string, listen_port int) Node {
+func NewUDPNode(listen_ip string, listen_port int) Node {
 
 	net := new(UDPNode)
 	net.listen_ip = listen_ip
@@ -79,7 +81,7 @@ func NewUDPNetwork(listen_ip string, listen_port int) Node {
 	return net
 }
 
-func (network *UDPNode) Listen() Response {
+func (network *UDPNode) Listen() Message {
 	addr := net.UDPAddr{Port: network.listen_port, IP: net.ParseIP(network.listen_ip)}
 	
 	fmt.Printf("listening...\n")
@@ -97,7 +99,7 @@ func (network *UDPNode) Listen() Response {
 	fmt.Printf("Received %v bytes %v\n", n, string(buf[0:n - 1]))
 
 	conn.Close()
-	return Response{rec_addr.String(), buf}
+	return Message{rec_addr.String(), buf}
 }
 	
 func (network *UDPNode) SendData(recipient *Contact, data []byte) {

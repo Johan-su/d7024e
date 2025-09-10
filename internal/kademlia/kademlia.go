@@ -105,7 +105,7 @@ func (kademlia *Kademlia) HandleResponse() {
 				log.Printf("Got Invalid RPC\n")
 			}
 			case RPCTypePing: {
-				kademlia.SendPingReplyMessage(&Contact{nil, response.from_address, nil}, &header.id)
+				kademlia.SendPingReplyMessage(&Contact{nil, response.address, nil}, &header.id)
 				// TODO maybe update bucket
 			}
 			case RPCTypeStore: {
@@ -114,13 +114,13 @@ func (kademlia *Kademlia) HandleResponse() {
 				
 				kademlia.Store(store.data)
 				// TODO maybe send back a error if it failed to store
-				kademlia.SendStoreReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, RPCErrorNoError)
+				kademlia.SendStoreReplyMessage(&Contact{nil, response.address, nil}, &header.id, RPCErrorNoError)
 			}
 			case RPCTypeFindNode: {
 				var find_node RPCFindNode
 				binary.Decode(response.data, binary.BigEndian, find_node)
 				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
-				kademlia.SendFindContactReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, contacts)
+				kademlia.SendFindContactReplyMessage(&Contact{nil, response.address, nil}, &header.id, contacts)
 			}
 			case RPCTypeFindValue: {
 				var find_value RPCFindValue
@@ -133,7 +133,7 @@ func (kademlia *Kademlia) HandleResponse() {
 				if !ok {
 					contacts = kademlia.routingTable.FindClosestContacts(&find_value.target_key_id, bucketSize)
 				}
-				kademlia.SendFindDataReplyMessage(&Contact{nil, response.from_address, nil}, &header.id, bytes, contacts)
+				kademlia.SendFindDataReplyMessage(&Contact{nil, response.address, nil}, &header.id, bytes, contacts)
 			}
 			case RPCTypePingReply: {
 				var ping_reply RPCPingReply
