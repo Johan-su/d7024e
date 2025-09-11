@@ -4,19 +4,31 @@ import (
 	"testing"
 	"time"
 	"bytes"
+	"strings"
 	"fmt"
 	"crypto/sha1"
 )
 
+func RemoveUnordered[T any](arr []T, index int) []T {
+	len := len(arr)
+	arr[index] = arr[len - 1]
+	arr = arr[:len - 1]
+	return arr
+}
+
 func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
-	net.mu.Lock()
-	l_msg := net.send_log[address][0]
-	net.send_log[address] = net.send_log[address][1:]	
-	net.mu.Unlock()
+	var msg_data []byte
+	{
+		net.mu.Lock()
+		l_msg := net.send_log[address][0]
+		msg_data = bytes.Clone(l_msg.data)
+		net.send_log[address] = net.send_log[address][1:]
+		net.mu.Unlock()
+	}
 
 	var lh RPCHeader
 
-	PartialRead(bytes.NewReader(l_msg.data), &lh)
+	PartialRead(bytes.NewReader(msg_data), &lh)
 
 	if lh.Typ != typ {
 		t.Errorf("[%v] Expected send %v got %v\n", address, lh.Typ, typ)
@@ -24,17 +36,23 @@ func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 }
 
 func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address string, typ RPCType) {
-	net.mu.Lock()
-	l_msg := net.receive_log[address][0]
-	net.receive_log[address] = net.receive_log[address][1:]	
-	net.mu.Unlock()
+	var msg_data []byte
+	var msg_address string
+	{
+		net.mu.Lock()
+		l_msg := net.receive_log[address][0]
+		msg_data = bytes.Clone(l_msg.data)
+		msg_address = strings.Clone(l_msg.from_address)
+		net.receive_log[address] = net.receive_log[address][1:]
+		net.mu.Unlock()
+	}
 
 	var lh RPCHeader
 
-	PartialRead(bytes.NewReader(l_msg.data), &lh)
+	PartialRead(bytes.NewReader(msg_data), &lh)
 
-	if !(l_msg.from_address == from_address && lh.Typ == typ) {
-		t.Errorf("[%v] Expected Receive %v got %v\n", address, lh.Typ, typ)
+	if !(msg_address == from_address && lh.Typ == typ) {
+		t.Errorf("[%v] Expected Receive [%v] %v got [%v] %v\n", address, from_address, typ, msg_address, lh.Typ)
 	}
 }
 
