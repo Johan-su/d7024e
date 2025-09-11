@@ -1,28 +1,82 @@
 package kademlia
 
 import (
-	"fmt"
 	"testing"
+	"time"
+	"bytes"
+	"fmt"
 )
+
+func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
+	net.mu.Lock()
+	l_msg := net.send_log[address][0]
+	net.send_log[address] = net.send_log[address][1:]	
+	net.mu.Unlock()
+
+	var lh RPCHeader
+
+	PartialRead(bytes.NewReader(l_msg.data), &lh)
+
+	if lh.Typ != typ {
+		t.Errorf("[%v] Expected send %v got %v\n", address, lh.Typ, typ)
+	}
+}
+
+func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address string, typ RPCType) {
+	net.mu.Lock()
+	l_msg := net.receive_log[address][0]
+	net.receive_log[address] = net.receive_log[address][1:]	
+	net.mu.Unlock()
+
+	var lh RPCHeader
+
+	PartialRead(bytes.NewReader(l_msg.data), &lh)
+
+	if !(l_msg.from_address == from_address && lh.Typ == typ) {
+		t.Errorf("[%v] Expected Receive %v got %v\n", address, lh.Typ, typ)
+	}
+}
 
 func TestKademlia(t *testing.T) {
 
-	network := NewMockNetwork(1000)
+	network := NewMockNetwork(20, 0)
 
-	for _, node := range network.nodes {
-		go node.HandleResponse()
+	for i := range network.nodes {
+		go network.nodes[i].HandleResponse()
 	}
+	time.Sleep(500 * time.Millisecond)
 
+	network.nodes[4].SendPingMessage("15")
 	network.nodes[5].SendPingMessage("15")
+	network.nodes[6].SendPingMessage("15")
+	network.nodes[7].SendPingMessage("15")
 
-	network.ExpectReceive("15", RPCTypePing)
-	network.ExpectSend("15", RPCTypePingReply)
-	network.ExpectReceive("5", RPCTypePingReply)
+	network.nodes[15].SendPingMessage("4")
+
+
+	time.Sleep(500 * time.Millisecond)
+
+
+	ExpectSend(t, &network, "4", RPCTypePing)
+	ExpectSend(t, &network, "5", RPCTypePing)
+	ExpectSend(t, &network, "6", RPCTypePing)
+	ExpectSend(t, &network, "7", RPCTypePing)
+	ExpectSend(t, &network, "15", RPCTypePing)
+	ExpectReceive(t, &network, "15", "4", RPCTypePing)
+	ExpectReceive(t, &network, "15", "5", RPCTypePing)
+	ExpectReceive(t, &network, "15", "6", RPCTypePing)
+	ExpectReceive(t, &network, "15", "7", RPCTypePing)
+	ExpectReceive(t, &network, "4", "15", RPCTypePing)
+	ExpectSend(t, &network, "15", RPCTypePingReply)
+	ExpectSend(t, &network, "15", RPCTypePingReply)
+	ExpectSend(t, &network, "15", RPCTypePingReply)
+	ExpectSend(t, &network, "15", RPCTypePingReply)
+	ExpectSend(t, &network, "4", RPCTypePingReply)
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
 	// xreate a mock Kademlia node
-	network := NewMockNetwork()
+	network := NewMockNetwork(0, 0)
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),

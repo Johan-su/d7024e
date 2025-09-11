@@ -5,6 +5,7 @@ import (
 	"log"
 	"fmt"
 	"sync"
+	"math/rand"
 )
 
 type Message struct {
@@ -18,22 +19,21 @@ type Node interface {
 }
 
 type MockNetwork struct {
-	mu_ip_to_queue sync.Mutex
+	nodes []Kademlia
+	packet_loss float32 // 0-1 probability of packet loss
+
+	mu sync.Mutex
 	ip_to_queue map[string]chan Message
 
-
-	nodes []Kademlia
+	send_log map[string][]Message
+	receive_log map[string][]Message
 }
 
-func (net *MockNetwork) ExpectReceive(address string, msg Message) {
-}
-
-func (net *MockNetwork) ExpectSend(address string, msg Message) {
-}
-
-func NewMockNetwork(node_count int) MockNetwork {
+func NewMockNetwork(node_count int, packet_loss float32) MockNetwork {
 	var n MockNetwork
 	n.ip_to_queue = make(map[string]chan Message)
+	n.send_log = make(map[string][]Message)
+	n.receive_log = make(map[string][]Message)
 	for i := 0; i < node_count; i += 1 {
 		address := fmt.Sprintf("%d", i)
 		n.nodes = append(n.nodes, NewKademlia(address, NewMockNode(address, &n)))
@@ -44,8 +44,6 @@ func NewMockNetwork(node_count int) MockNetwork {
 type MockNode struct {
 	listen_ip string
 	network *MockNetwork	
-	send_log []Message
-	receive_log []Message
 }
 
 func NewMockNode(listen_ip string, network *MockNetwork) Node {
@@ -58,26 +56,31 @@ func NewMockNode(listen_ip string, network *MockNetwork) Node {
 // TODO: make channel buffer count global constant
 func (node *MockNode) Listen() Message {
 
-	fmt.Printf("listening...\n")
-	node.network.mu_ip_to_queue.Lock()
+	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[node.listen_ip]
 	if channel == nil {
 		node.network.ip_to_queue[node.listen_ip] = make(chan Message, 8)	
 		channel = node.network.ip_to_queue[node.listen_ip]
 	}
-	node.network.mu_ip_to_queue.Unlock()
+	node.network.mu.Unlock()
 	rep := <- channel
-	n := len(rep.data)
-	fmt.Printf("Received %v bytes %v\n", n, string(rep.data[0:n - 1]))
+	node.network.mu.Lock()
+	node.network.receive_log[node.listen_ip] = append(node.network.receive_log[node.listen_ip], rep)
+	node.network.mu.Unlock()
 	return rep
 }
 	
 func (node *MockNode) SendData(address string, data []byte) {
-	node.network.mu_ip_to_queue.Lock()
+	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[address]
-	node.network.mu_ip_to_queue.Unlock()
-	if channel != nil {
-		channel <- Message{address, data} 
+	node.network.mu.Unlock()
+
+	if node.network.packet_loss < rand.Float32() && channel != nil {
+		dat := Message{node.listen_ip, data}
+		channel <- dat 
+		node.network.mu.Lock()
+		node.network.send_log[node.listen_ip] = append(node.network.send_log[node.listen_ip], dat)
+		node.network.mu.Unlock()
 	}
 }
 
@@ -104,12 +107,10 @@ func (network *UDPNode) Listen() Message {
 	}
 	buf := make([]byte, 1000)
 	
-	n, rec_addr, err := conn.ReadFromUDP(buf)
+	_, rec_addr, err := conn.ReadFromUDP(buf)
 	if err != nil {
 		log.Fatalf("Failed to read packet %v\n", err)
 	}
-
-	fmt.Printf("Received %v bytes %v\n", n, string(buf[0:n - 1]))
 
 	conn.Close()
 	return Message{rec_addr.String(), buf}

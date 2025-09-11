@@ -28,8 +28,8 @@ func Sha1toKademlia(data []byte) *KademliaID {
 	h := sha1.New()
 	bid := h.Sum(data)
 	var id KademliaID
-	for i, byt := range bid {
-		id[i] = byt
+	for i := range id {
+		id[i] = bid[i]
 	}
 	return &id
 } 
