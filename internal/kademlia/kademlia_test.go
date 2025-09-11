@@ -80,13 +80,13 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
-		net: NewMockNode("localhost", &network),
+		net:          NewMockNode("localhost", &network),
 	}
 
 	// add the node itself to its routing table
 	k.routingTable.AddContact(me)
 
-	// areate target and some initial contacts
+	// create target and some initial contacts
 	target := NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "target")
 	fmt.Printf("Target contact: %s\n", target.String())
 
@@ -102,38 +102,7 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 
 	// test the algorithm with mock network function
 	fmt.Println("=== Starting LookupContactInternal ===")
-	result := k.LookupContactInternal(&target, func(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
-		fmt.Printf("Querying %d nodes: ", len(contactsToQuery))
-		for i, contact := range contactsToQuery {
-			contact.CalcDistance(targetID)
-			fmt.Printf("%s (dist: %s)", contact.ID.String()[:8], contact.distance)
-			if i < len(contactsToQuery)-1 {
-				fmt.Print(", ")
-			}
-		}
-		fmt.Println()
-
-		// mock function with more realistic responses
-		responseMap := make(map[Contact][]Contact)
-		for _, contact := range contactsToQuery {
-			// simulate network response with 2-3 random contacts
-			mockResponse := []Contact{
-				NewContact(NewRandomKademliaID(), "mock-node-1"),
-				NewContact(NewRandomKademliaID(), "mock-node-2"),
-				NewContact(NewRandomKademliaID(), "mock-node-3"),
-			}
-
-			// calculate distances for the mock responses
-			for j := range mockResponse {
-				mockResponse[j].CalcDistance(targetID)
-			}
-
-			responseMap[contact] = mockResponse
-			fmt.Printf("  Node %s returned %d contacts\n", contact.ID.String()[:8], len(mockResponse))
-		}
-		fmt.Println()
-		return responseMap
-	})
+	result := k.LookupContact(&target)
 
 	fmt.Println("=== Final Results ===")
 	fmt.Printf("Found %d results:\n", len(result))
@@ -163,4 +132,52 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 			fmt.Printf("Correct order: %s < %s\n", result[i].distance.String()[:8], result[i+1].distance.String()[:8])
 		}
 	}
+}
+
+func TestStoreWithNodeTracking(t *testing.T) {
+	network := NewMockNetwork()
+	me := NewContact(NewRandomKademliaID(), "localhost:8000")
+	k := &Kademlia{
+		routingTable: NewRoutingTable(me),
+		net:          NewMockNode("localhost", &network),
+		kv_store:     make(map[KademliaID][]byte),
+	}
+
+	contacts := []Contact{
+		NewContact(NewRandomKademliaID(), "node-1:8000"),
+		NewContact(NewRandomKademliaID(), "node-2:8000"),
+		NewContact(NewRandomKademliaID(), "node-3:8000"),
+	}
+
+	for _, contact := range contacts {
+		k.routingTable.AddContact(contact)
+	}
+	k.routingTable.AddContact(me) // add self last to see if it gets selected
+
+	// test data
+	testData := []byte("test data for storage")
+
+	hasher := sha1.New()
+	hasher.Write(testData)
+	hashBytes := hasher.Sum(nil)
+	hash := KademliaID{}
+	copy(hash[:], hashBytes)
+
+	t.Logf("Data hash: %s", hash.String())
+	t.Logf("Data content: %s", string(testData))
+
+	err := k.Store(testData)
+
+	// log results
+	if err != nil {
+		t.Logf("Store completed with errors: %v", err)
+	} else {
+		t.Log("Store completed successfully!")
+	}
+
+	// verify local storage
+	if _, exists := k.kv_store[hash]; !exists {
+		t.Fatal("Data should be stored locally")
+	}
+	t.Log("Data successfully stored locally")
 }
