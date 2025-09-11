@@ -1,10 +1,10 @@
 name: Docker CI master
 
-on:
-  push:
-    branches: [ "main" ]
-    tags:
-      - '*'
+#on:
+#  push:
+#    branches: [ "main" ]
+#    tags:
+#      - '*'
 
 env:
   REGISTRY: ghcr.io
