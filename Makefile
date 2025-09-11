@@ -1,9 +1,9 @@
 all: build
 .PHONY: all build
 
-BINARY_NAME := helloworld
-BUILD_IMAGE ?= test/helloworld
-PUSH_IMAGE ?= test/helloworld:v1.0.0
+BINARY_NAME := kademlia
+BUILD_IMAGE ?= test/kademlia
+PUSH_IMAGE ?= test/kademlia:v1.0.0
 
 VERSION := $(shell git rev-parse --short HEAD)
 BUILDTIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -27,7 +27,7 @@ coverage:
 	./buildtools/codecov
 
 test: 
-	@cd pkg/helloworld; go test -v --race
+	@cd pkg/kademlia; go test -v --race
 
 install:
 	cp ./bin/$(BINARY_NAME) /usr/local/bin
