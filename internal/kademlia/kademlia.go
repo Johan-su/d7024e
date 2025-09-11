@@ -35,7 +35,8 @@ const (
 
 type RPCHeader struct {
 	Typ RPCType
-	Id KademliaID
+	Node_id KademliaID
+	Rpc_id KademliaID
 	Rpc_error RPCError
 }
 
@@ -84,12 +85,17 @@ type RPCFindValueReply struct {
 
 const alpha = 3
 
+type Reply struct {
+	rpc_id KademliaID
+	remove_from_bucket_if_timeout bool 
+}
+
 type Kademlia struct {
 	routingTable *RoutingTable
 	kv_store map[KademliaID][]byte
 
 	mu_reply_list sync.Mutex
-	reply_list []KademliaID
+	reply_list []Reply
 
 	net Node
 }
@@ -111,7 +117,7 @@ func (kademlia *Kademlia) RemoveIfInReplyList(id KademliaID) bool {
 	reply_len := len(kademlia.reply_list)
 	
 	for i := 0; i < reply_len; i += 1 {
-		if (id.Equals(&kademlia.reply_list[i])) {
+		if (id.Equals(&kademlia.reply_list[i].rpc_id)) {
 			kademlia.reply_list[i] = kademlia.reply_list[reply_len - 1]
 			kademlia.reply_list = kademlia.reply_list[:reply_len - 1]
 			return true
@@ -120,9 +126,9 @@ func (kademlia *Kademlia) RemoveIfInReplyList(id KademliaID) bool {
 	return false
 }
 
-func (kademlia *Kademlia) AddToReplyList(id KademliaID) {
+func (kademlia *Kademlia) AddToReplyList(reply Reply) {
 	kademlia.mu_reply_list.Lock()
-	kademlia.reply_list = append(kademlia.reply_list, id)
+	kademlia.reply_list = append(kademlia.reply_list, reply)
 	kademlia.mu_reply_list.Unlock()
 }
 
@@ -135,6 +141,21 @@ func PartialRead[T any](reader *bytes.Reader, val *T) error {
 		return err
 	}
 	return nil
+}
+
+func (kademlia *Kademlia) BucketUpdate(address string, node_id KademliaID) {
+	bucket_index := kademlia.routingTable.getBucketIndex(&node_id)
+	bucket := kademlia.routingTable.buckets[bucket_index]
+
+	if (bucket.Len() != bucketSize) {
+		bucket.AddContact(Contact{&node_id, address, nil})
+	} else {
+		exists := bucket.AddContact(Contact{&node_id, address, nil})
+		if !exists {
+			front_contact := bucket.list.Front()
+			kademlia.SendPingMessage(front_contact.Value.(Contact).Address, true)
+		}
+	}
 }
 
 
@@ -155,7 +176,7 @@ func (kademlia *Kademlia) HandleResponse() {
 			}
 			case RPCTypePing: {
 				log.Printf("[%v] ping\n", kademlia.routingTable.me.Address)
-				kademlia.SendPingReplyMessage(response.from_address, &header.Id)
+				kademlia.SendPingReplyMessage(response.from_address, &header.Rpc_id)
 				// TODO maybe update bucket
 			}
 			case RPCTypeStore: {
@@ -170,23 +191,20 @@ func (kademlia *Kademlia) HandleResponse() {
 					store.data = make([]byte, store.data_size)
 					reader.Read(store.data)
 				}
-				binary.Decode(response.data, binary.NativeEndian, store)
 				
 				kademlia.Store(store.data)
 				// TODO maybe send back a error if it failed to store
-				kademlia.SendStoreReplyMessage(response.from_address, &header.Id, RPCErrorNoError)
+				kademlia.SendStoreReplyMessage(response.from_address, &header.Rpc_id, RPCErrorNoError)
 			}
 			case RPCTypeFindNode: {
 				log.Printf("[%v] find_node\n", kademlia.routingTable.me.Address)
 				var find_node RPCFindNode
-				binary.Decode(response.data, binary.NativeEndian, find_node)
 				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
-				kademlia.SendFindContactReplyMessage(response.from_address, &header.Id, contacts)
+				kademlia.SendFindContactReplyMessage(response.from_address, &header.Rpc_id, contacts)
 			}
 			case RPCTypeFindValue: {
 				log.Printf("[%v] find_value\n", kademlia.routingTable.me.Address)
 				var find_value RPCFindValue
-				binary.Decode(response.data, binary.NativeEndian, find_value)
 				
 				var bytes []byte
 				var contacts []Contact
@@ -195,15 +213,14 @@ func (kademlia *Kademlia) HandleResponse() {
 				if !ok {
 					contacts = kademlia.routingTable.FindClosestContacts(&find_value.target_key_id, bucketSize)
 				}
-				kademlia.SendFindDataReplyMessage(response.from_address, &header.Id, bytes, contacts)
+				kademlia.SendFindDataReplyMessage(response.from_address, &header.Rpc_id, bytes, contacts)
 			}
 			case RPCTypePingReply: {
 				log.Printf("[%v] ping_reply\n", kademlia.routingTable.me.Address)
 				
-				if kademlia.RemoveIfInReplyList(header.Id) {
-					var ping_reply RPCPingReply
-					binary.Decode(response.data, binary.NativeEndian, ping_reply)
-					// update bucket
+				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
+					// var ping_reply RPCPingReply
+					kademlia.BucketUpdate(response.from_address, header.Node_id)
 					log.Printf("TODO update bucket when receiving ping reply")
 				} else {
 					log.Printf("[%v] Got unexpected ping reply, might have timed out\n", kademlia.routingTable.me.Address)
@@ -211,11 +228,9 @@ func (kademlia *Kademlia) HandleResponse() {
 			}
 			case RPCTypeStoreReply: {
 				log.Printf("[%v] store_reply\n", kademlia.routingTable.me.Address)
-				if kademlia.RemoveIfInReplyList(header.Id) {
-					var store_reply RPCStoreReply
-					binary.Decode(response.data, binary.NativeEndian, store_reply)
-					// update bucket
-		
+				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
+					// var store_reply RPCStoreReply
+					kademlia.BucketUpdate(response.from_address, header.Node_id)
 					panic("TODO Store RPC reply")
 				} else {
 					log.Printf("Got unexpected store reply, might have timed out\n")
@@ -223,10 +238,9 @@ func (kademlia *Kademlia) HandleResponse() {
 			}
 			case RPCTypeFindNodeReply: {
 				log.Printf("[%v] find_node_reply\n", kademlia.routingTable.me.Address)
-				if kademlia.RemoveIfInReplyList(header.Id) {
-					var find_node_reply RPCFindNodeReply
-					binary.Decode(response.data, binary.NativeEndian, find_node_reply)
-					// update bucket
+				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
+					// var find_node_reply RPCFindNodeReply
+					kademlia.BucketUpdate(response.from_address, header.Node_id)
 					panic("TODO find node RPC reply")
 				} else {
 					log.Printf("[%v] Got unexpected find node reply, might have timed out\n", kademlia.routingTable.me.Address)
@@ -234,10 +248,10 @@ func (kademlia *Kademlia) HandleResponse() {
 			}
 			case RPCTypeFindValueReply: {
 				log.Printf("[%v] find_value_reply\n", kademlia.routingTable.me.Address)
-				if kademlia.RemoveIfInReplyList(header.Id) {
+				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
 					var find_value_reply RPCFindValueReply
 					binary.Decode(response.data, binary.NativeEndian, find_value_reply)
-					// update bucket
+					kademlia.BucketUpdate(response.from_address, header.Node_id)
 					panic("TODO find value RPC reply")
 				} else {
 					log.Printf("Got unexpected find value reply, might have timed out\n")
@@ -542,11 +556,15 @@ func (k *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaI
 	return responseMap
 }
 
-func (kademlia *Kademlia) SendPingMessage(address string) {
+func (kademlia *Kademlia) SendPingMessage(address string, remove_from_bucket_if_timeout bool) {
 	var rpc RPCPing
 	rpc.header.Typ = RPCTypePing
-	rpc.header.Id = *NewRandomKademliaID()
-	kademlia.AddToReplyList(rpc.header.Id) 
+	rpc.header.Rpc_id = *NewRandomKademliaID()
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
+	var reply Reply
+	reply.rpc_id = rpc.header.Rpc_id
+	reply.remove_from_bucket_if_timeout = remove_from_bucket_if_timeout
+	kademlia.AddToReplyList(reply) 
 	
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
 
@@ -556,8 +574,11 @@ func (kademlia *Kademlia) SendPingMessage(address string) {
 func (kademlia *Kademlia) SendFindContactMessage(address string, key *KademliaID) {
 	var rpc RPCFindNode
 	rpc.header.Typ = RPCTypeFindNode
-	rpc.header.Id = *NewRandomKademliaID()
-	kademlia.AddToReplyList(rpc.header.Id) 
+	rpc.header.Rpc_id = *NewRandomKademliaID()
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
+	var reply Reply
+	reply.rpc_id = rpc.header.Rpc_id
+	kademlia.AddToReplyList(reply) 
 
 	rpc.target_node_id = *key
 
@@ -570,8 +591,11 @@ func (kademlia *Kademlia) SendFindContactMessage(address string, key *KademliaID
 func (kademlia *Kademlia) SendFindDataMessage(address string, hash string) {
 	var rpc RPCFindValue
 	rpc.header.Typ = RPCTypeFindValue
-	rpc.header.Id = *NewRandomKademliaID()
-	kademlia.AddToReplyList(rpc.header.Id) 
+	rpc.header.Rpc_id = *NewRandomKademliaID()
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
+	var reply Reply
+	reply.rpc_id = rpc.header.Rpc_id
+	kademlia.AddToReplyList(reply) 
 
 	rpc.target_key_id = *NewKademliaID(hash)
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
@@ -583,8 +607,11 @@ func (kademlia *Kademlia) SendFindDataMessage(address string, hash string) {
 func (kademlia *Kademlia) SendStoreMessage(address string, data []byte) {
 	var rpc RPCStore
 	rpc.header.Typ = RPCTypeStore
-	rpc.header.Id = *NewRandomKademliaID()
-	kademlia.AddToReplyList(rpc.header.Id) 
+	rpc.header.Rpc_id = *NewRandomKademliaID()
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
+	var reply Reply
+	reply.rpc_id = rpc.header.Rpc_id
+	kademlia.AddToReplyList(reply) 
 	
 	rpc.data_size = uint64(len(data))
 	rpc.data = data
@@ -597,7 +624,8 @@ func (kademlia *Kademlia) SendStoreMessage(address string, data []byte) {
 func (kademlia *Kademlia) SendPingReplyMessage(address string, id *KademliaID) {
 	var rpc RPCPingReply
 	rpc.header.Typ = RPCTypePingReply
-	rpc.header.Id = *id
+	rpc.header.Rpc_id = *id
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
 
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
 
@@ -607,7 +635,8 @@ func (kademlia *Kademlia) SendPingReplyMessage(address string, id *KademliaID) {
 func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *KademliaID, contacts []Contact) {
 	var rpc RPCFindNodeReply
 	rpc.header.Typ = RPCTypeFindNodeReply
-	rpc.header.Id = *id
+	rpc.header.Rpc_id = *id
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
 
 	rpc.contact_count = uint16(len(contacts))
 	rpc.contacts = contacts
@@ -620,7 +649,8 @@ func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *Kademl
 func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaID, data []byte, contacts []Contact) {
 	var rpc RPCFindValueReply
 	rpc.header.Typ = RPCTypeFindValue
-	rpc.header.Id = *id
+	rpc.header.Rpc_id = *id
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
 
 	rpc.data_size = uint64(len(data))
 	rpc.contact_count = uint16(len(contacts))
@@ -636,7 +666,8 @@ func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaI
 func (kademlia *Kademlia) SendStoreReplyMessage(address string, id *KademliaID, err RPCError) {
 	var rpc RPCStoreReply
 	rpc.header.Typ = RPCTypeStoreReply
-	rpc.header.Id = *id
+	rpc.header.Rpc_id = *id
+	rpc.header.Node_id = *kademlia.routingTable.me.ID
 	rpc.header.Rpc_error = err
 
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)

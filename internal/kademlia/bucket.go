@@ -17,15 +17,22 @@ func newBucket() *bucket {
 	return bucket
 }
 
+func (bucket *bucket) RemoveContact(contact Contact) {
+	panic("TODO")
+}
+
 // AddContact adds the Contact to the front of the bucket
 // or moves it to the front of the bucket if it already existed
-func (bucket *bucket) AddContact(contact Contact) {
+// returns true if it already exists
+func (bucket *bucket) AddContact(contact Contact) bool {
+	var exists bool
 	var element *list.Element
 	for e := bucket.list.Front(); e != nil; e = e.Next() {
 		nodeID := e.Value.(Contact).ID
 
 		if (contact).ID.Equals(nodeID) {
 			element = e
+			break
 		}
 	}
 
@@ -34,8 +41,10 @@ func (bucket *bucket) AddContact(contact Contact) {
 			bucket.list.PushFront(contact)
 		}
 	} else {
+		exists = true
 		bucket.list.MoveToFront(element)
 	}
+	return exists
 }
 
 // GetContactAndCalcDistance returns an array of Contacts where 

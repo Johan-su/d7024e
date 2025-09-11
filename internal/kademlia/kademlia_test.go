@@ -61,13 +61,13 @@ func TestKademlia(t *testing.T) {
 	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
 	
-	network.nodes[0].SendPingMessage("19")
-	network.nodes[4].SendPingMessage("15")
-	network.nodes[5].SendPingMessage("15")
-	network.nodes[6].SendPingMessage("15")
-	network.nodes[7].SendPingMessage("15")
+	network.nodes[0].SendPingMessage("19", false)
+	network.nodes[4].SendPingMessage("15", false)
+	network.nodes[5].SendPingMessage("15", false)
+	network.nodes[6].SendPingMessage("15", false)
+	network.nodes[7].SendPingMessage("15", false)
 
-	network.nodes[15].SendPingMessage("4")
+	network.nodes[15].SendPingMessage("4", false)
 
 
 	time.Sleep(500 * time.Millisecond)
