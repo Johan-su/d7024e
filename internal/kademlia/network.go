@@ -29,14 +29,14 @@ type MockNetwork struct {
 	receive_log map[string][]Message
 }
 
-func NewMockNetwork(node_count int, packet_loss float32) MockNetwork {
-	var n MockNetwork
+func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
+	n := new(MockNetwork)
 	n.ip_to_queue = make(map[string]chan Message)
 	n.send_log = make(map[string][]Message)
 	n.receive_log = make(map[string][]Message)
 	for i := 0; i < node_count; i += 1 {
 		address := fmt.Sprintf("%d", i)
-		n.nodes = append(n.nodes, NewKademlia(address, NewMockNode(address, &n)))
+		n.nodes = append(n.nodes, NewKademlia(address, NewMockNode(address, n)))
 	}
 	return n
 }

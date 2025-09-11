@@ -76,21 +76,21 @@ func TestKademlia(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 
-	ExpectSend(t, &network, "4", RPCTypePing)
-	ExpectSend(t, &network, "5", RPCTypePing)
-	ExpectSend(t, &network, "6", RPCTypePing)
-	ExpectSend(t, &network, "7", RPCTypePing)
-	ExpectSend(t, &network, "15", RPCTypePing)
-	ExpectReceive(t, &network, "15", "4", RPCTypePing)
-	ExpectReceive(t, &network, "15", "5", RPCTypePing)
-	ExpectReceive(t, &network, "15", "6", RPCTypePing)
-	ExpectReceive(t, &network, "15", "7", RPCTypePing)
-	ExpectReceive(t, &network, "4", "15", RPCTypePing)
-	ExpectSend(t, &network, "15", RPCTypePingReply)
-	ExpectSend(t, &network, "15", RPCTypePingReply)
-	ExpectSend(t, &network, "15", RPCTypePingReply)
-	ExpectSend(t, &network, "15", RPCTypePingReply)
-	ExpectSend(t, &network, "4", RPCTypePingReply)
+	ExpectSend(t, network, "4", RPCTypePing)
+	ExpectSend(t, network, "5", RPCTypePing)
+	ExpectSend(t, network, "6", RPCTypePing)
+	ExpectSend(t, network, "7", RPCTypePing)
+	ExpectSend(t, network, "15", RPCTypePing)
+	ExpectReceive(t, network, "15", "4", RPCTypePing)
+	ExpectReceive(t, network, "15", "5", RPCTypePing)
+	ExpectReceive(t, network, "15", "6", RPCTypePing)
+	ExpectReceive(t, network, "15", "7", RPCTypePing)
+	ExpectReceive(t, network, "4", "15", RPCTypePing)
+	ExpectSend(t, network, "15", RPCTypePingReply)
+	ExpectSend(t, network, "15", RPCTypePingReply)
+	ExpectSend(t, network, "15", RPCTypePingReply)
+	ExpectSend(t, network, "15", RPCTypePingReply)
+	ExpectSend(t, network, "4", RPCTypePingReply)
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
@@ -99,7 +99,7 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
-		net:          NewMockNode("localhost", &network),
+		net:          NewMockNode("localhost", network),
 	}
 
 	// add the node itself to its routing table
@@ -158,7 +158,7 @@ func TestStoreWithNodeTracking(t *testing.T) {
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
-		net:          NewMockNode("localhost", &network),
+		net:          NewMockNode("localhost", network),
 		kv_store:     make(map[KademliaID][]byte),
 	}
 
