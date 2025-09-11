@@ -280,17 +280,20 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
+	// log which nodes we're attempting to store on
+	log.Printf("Attempting to store on %d nodes:", len(contacts))
+	for i, contact := range contacts {
+		log.Printf("  %d: %s (address: %s)", i+1, contact.ID, contact.Address)
+	}
+
 	for _, contact := range contacts {
 		wg.Add(1)
 		go func(c Contact) {
 			defer wg.Done()
 
-			// Simulate network latency
-			// time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-
 			// Mock storage with 90% success rate
 			if rand.Intn(10) < 9 { // 90% success
-				log.Printf("Mock store successful on %s", c.Address)
+				log.Printf("Mock store successful on node %s (%s)", c.ID, c.Address)
 				mutex.Lock()
 				results[c] = nil
 				mutex.Unlock()
@@ -302,7 +305,7 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 					fmt.Errorf("network timeout"),
 				}
 				err := failures[rand.Intn(len(failures))]
-				log.Printf("Mock store failed on %s: %v", c.Address, err)
+				log.Printf("Mock store failed on node %s (%s): %v", c.ID, c.Address, err)
 				mutex.Lock()
 				results[c] = err
 				mutex.Unlock()

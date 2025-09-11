@@ -117,17 +117,9 @@ func TestStoreWithNodeTracking(t *testing.T) {
 	t.Logf("Data hash: %s", hash.String())
 	t.Logf("Data content: %s", string(testData))
 
-	successfulNodes := []string{}
-	failedNodes := []string{}
-
 	err := k.Store(testData)
 
 	// log results
-	t.Logf("Successful storage on NodeIDs: %v", successfulNodes)
-	if len(failedNodes) > 0 {
-		t.Logf("Failed storage on NodeIDs: %v", failedNodes)
-	}
-
 	if err != nil {
 		t.Logf("Store completed with errors: %v", err)
 	} else {
