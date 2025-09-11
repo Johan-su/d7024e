@@ -26,7 +26,7 @@ func TestKademlia(t *testing.T) {
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
-	// xreate a mock Kademlia node
+	// create a mock Kademlia node
 	network := NewMockNetwork()
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
@@ -37,7 +37,7 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 	// add the node itself to its routing table
 	k.routingTable.AddContact(me)
 
-	// areate target and some initial contacts
+	// create target and some initial contacts
 	target := NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "target")
 	fmt.Printf("Target contact: %s\n", target.String())
 
@@ -131,16 +131,4 @@ func TestStoreWithNodeTracking(t *testing.T) {
 		t.Fatal("Data should be stored locally")
 	}
 	t.Log("Data successfully stored locally")
-
-	// verify the closest nodes were selected for storage
-	target := NewContact(&hash, "")
-	closestContacts := k.routingTable.FindClosestContacts(target.ID, bucketSize)
-
-	t.Logf("Closest nodes to data hash (by NodeID):")
-	for i, contact := range closestContacts {
-		contact.CalcDistance(&hash)
-		t.Logf("  %d: %s (distance: %s)", i+1, contact.ID.String(), contact.distance.String()[:8])
-	}
-
-	t.Log("store test with node tracking passed")
 }

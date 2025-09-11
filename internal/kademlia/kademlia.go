@@ -280,10 +280,18 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
-	// log which nodes we're attempting to store on
-	log.Printf("Attempting to store on %d nodes:", len(contacts))
+	// Calculate data hash to compute distances
+	hasher := sha1.New()
+	hasher.Write(data)
+	hashBytes := hasher.Sum(nil)
+	dataHash := KademliaID{}
+	copy(dataHash[:], hashBytes)
+
+	// Log which nodes we're attempting to store on with distances
+	log.Printf("Attempting to store on %d nodes (distance to data hash %s):", len(contacts), dataHash.String()[:8])
 	for i, contact := range contacts {
-		log.Printf("  %d: %s (address: %s)", i+1, contact.ID, contact.Address)
+		contact.CalcDistance(&dataHash)
+		log.Printf("  %d: %s (distance: %s)", i+1, contact.ID.String()[:8], contact.distance.String()[:8])
 	}
 
 	for _, contact := range contacts {
@@ -291,9 +299,12 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 		go func(c Contact) {
 			defer wg.Done()
 
+			// Calculate distance for this specific contact
+			c.CalcDistance(&dataHash)
+
 			// Mock storage with 90% success rate
 			if rand.Intn(10) < 9 { // 90% success
-				log.Printf("Mock store successful on node %s (%s)", c.ID, c.Address)
+				log.Printf("Mock store successful on node %s (distance: %s)", c.ID.String()[:8], c.distance.String()[:8])
 				mutex.Lock()
 				results[c] = nil
 				mutex.Unlock()
@@ -305,7 +316,7 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 					fmt.Errorf("network timeout"),
 				}
 				err := failures[rand.Intn(len(failures))]
-				log.Printf("Mock store failed on node %s (%s): %v", c.ID, c.Address, err)
+				log.Printf("Mock store failed on node %s (distance: %s): %v", c.ID.String()[:8], c.distance.String()[:8], err)
 				mutex.Lock()
 				results[c] = err
 				mutex.Unlock()
