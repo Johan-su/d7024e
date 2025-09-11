@@ -37,8 +37,16 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 	for i := 0; i < node_count; i += 1 {
 		address := fmt.Sprintf("%d", i)
 		n.nodes = append(n.nodes, NewKademlia(address, NewMockNode(address, n)))
+		// TODO: make channel buffer count global constant
+		n.ip_to_queue[address] = make(chan Message, 8)
 	}
 	return n
+}
+
+func (network *MockNetwork) AllNodesListen() {
+	for i := range network.nodes {
+		go network.nodes[i].HandleResponse()
+	}
 }
 
 type MockNode struct {
@@ -53,15 +61,10 @@ func NewMockNode(listen_ip string, network *MockNetwork) Node {
 	return node
 }
 
-// TODO: make channel buffer count global constant
 func (node *MockNode) Listen() Message {
 
 	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[node.listen_ip]
-	if channel == nil {
-		node.network.ip_to_queue[node.listen_ip] = make(chan Message, 8)	
-		channel = node.network.ip_to_queue[node.listen_ip]
-	}
 	node.network.mu.Unlock()
 	rep := <- channel
 	node.network.mu.Lock()
@@ -75,7 +78,7 @@ func (node *MockNode) SendData(address string, data []byte) {
 	channel := node.network.ip_to_queue[address]
 	node.network.mu.Unlock()
 
-	if node.network.packet_loss < rand.Float32() && channel != nil {
+	if node.network.packet_loss < rand.Float32() {
 		dat := Message{node.listen_ip, data}
 		channel <- dat 
 		node.network.mu.Lock()

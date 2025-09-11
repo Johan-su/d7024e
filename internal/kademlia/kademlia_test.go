@@ -59,12 +59,9 @@ func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address 
 func TestKademlia(t *testing.T) {
 
 	network := NewMockNetwork(20, 0)
-
-	for i := range network.nodes {
-		go network.nodes[i].HandleResponse()
-	}
-	time.Sleep(500 * time.Millisecond)
-
+	network.AllNodesListen()
+	
+	network.nodes[0].SendPingMessage("19")
 	network.nodes[4].SendPingMessage("15")
 	network.nodes[5].SendPingMessage("15")
 	network.nodes[6].SendPingMessage("15")
@@ -75,7 +72,7 @@ func TestKademlia(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-
+	//TODO change so the expect function allows for any message order
 	ExpectSend(t, network, "4", RPCTypePing)
 	ExpectSend(t, network, "5", RPCTypePing)
 	ExpectSend(t, network, "6", RPCTypePing)
