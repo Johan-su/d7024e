@@ -27,7 +27,7 @@ coverage:
 	./buildtools/codecov
 
 test: 
-	@cd pkg/kademlia; go test -v --race
+	@cd internal/kademlia; go test -v --race
 
 install:
 	cp ./bin/$(BINARY_NAME) /usr/local/bin
