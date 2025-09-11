@@ -1,14 +1,17 @@
 package kademlia
 
 import (
+	"crypto/sha1"
+	"encoding/binary"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"sync"
-	"encoding/binary"
 )
 
 type RPCType uint8
+
 const (
 	RPCTypeInvalid = iota
 	RPCTypePing
@@ -22,15 +25,15 @@ const (
 )
 
 type RPCError uint8
+
 const (
 	RPCErrorNoError = iota
 	RPCErrorLackOfSpace
 )
 
-
 type RPCHeader struct {
-	typ RPCType
-	id KademliaID
+	typ       RPCType
+	id        KademliaID
 	rpc_error RPCError
 }
 
@@ -39,18 +42,18 @@ type RPCPing struct {
 }
 
 type RPCStore struct {
-	header RPCHeader
+	header    RPCHeader
 	data_size uint64
-	data []byte
+	data      []byte
 }
 
 type RPCFindNode struct {
-	header RPCHeader
+	header         RPCHeader
 	target_node_id KademliaID
 }
 
 type RPCFindValue struct {
-	header RPCHeader
+	header        RPCHeader
 	target_key_id KademliaID
 }
 
@@ -63,31 +66,31 @@ type RPCStoreReply struct {
 }
 
 type RPCFindNodeReply struct {
-	header RPCHeader
-	contact_count uint16	
-	contacts []Contact
+	header        RPCHeader
+	contact_count uint16
+	contacts      []Contact
 }
 
 // returns either data or triples
 type RPCFindValueReply struct {
-	header RPCHeader
-	data_size uint64
+	header        RPCHeader
+	data_size     uint64
 	contact_count uint16
-	data []byte
-	contacts []Contact
+	data          []byte
+	contacts      []Contact
 }
 
 type Kademlia struct {
 	routingTable *RoutingTable
-	kv_store map[KademliaID][]byte
-	net Node
+	kv_store     map[KademliaID][]byte
+	net          Node
 }
 
 func NewKademlia(net Node) Kademlia {
 	var k Kademlia
-	
+
 	k.routingTable = new(RoutingTable)
-	k.kv_store = make(map[KademliaID][]byte) 
+	k.kv_store = make(map[KademliaID][]byte)
 	k.net = net
 	return k
 }
@@ -101,31 +104,36 @@ func (kademlia *Kademlia) HandleResponse() {
 		binary.Decode(response.data, binary.BigEndian, header)
 		// receiving
 		switch header.typ {
-			case RPCTypeInvalid: {
+		case RPCTypeInvalid:
+			{
 				log.Printf("Got Invalid RPC\n")
 			}
-			case RPCTypePing: {
+		case RPCTypePing:
+			{
 				kademlia.SendPingReplyMessage(&Contact{nil, response.address, nil}, &header.id)
 				// TODO maybe update bucket
 			}
-			case RPCTypeStore: {
+		case RPCTypeStore:
+			{
 				var store RPCStore
 				binary.Decode(response.data, binary.BigEndian, store)
-				
+
 				kademlia.Store(store.data)
 				// TODO maybe send back a error if it failed to store
 				kademlia.SendStoreReplyMessage(&Contact{nil, response.address, nil}, &header.id, RPCErrorNoError)
 			}
-			case RPCTypeFindNode: {
+		case RPCTypeFindNode:
+			{
 				var find_node RPCFindNode
 				binary.Decode(response.data, binary.BigEndian, find_node)
 				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
 				kademlia.SendFindContactReplyMessage(&Contact{nil, response.address, nil}, &header.id, contacts)
 			}
-			case RPCTypeFindValue: {
+		case RPCTypeFindValue:
+			{
 				var find_value RPCFindValue
 				binary.Decode(response.data, binary.BigEndian, find_value)
-				
+
 				var bytes []byte
 				var contacts []Contact
 
@@ -135,26 +143,30 @@ func (kademlia *Kademlia) HandleResponse() {
 				}
 				kademlia.SendFindDataReplyMessage(&Contact{nil, response.address, nil}, &header.id, bytes, contacts)
 			}
-			case RPCTypePingReply: {
+		case RPCTypePingReply:
+			{
 				var ping_reply RPCPingReply
 				binary.Decode(response.data, binary.BigEndian, ping_reply)
 				// update bucket
 				panic("TODO update bucket when receiving ping reply")
 			}
-			case RPCTypeStoreReply: {
+		case RPCTypeStoreReply:
+			{
 				var store_reply RPCStoreReply
 				binary.Decode(response.data, binary.BigEndian, store_reply)
 				// update bucket
-	
+
 				panic("TODO Store RPC reply")
 			}
-			case RPCTypeFindNodeReply: {
+		case RPCTypeFindNodeReply:
+			{
 				var find_node_reply RPCFindNodeReply
 				binary.Decode(response.data, binary.BigEndian, find_node_reply)
 				// update bucket
 				panic("TODO find node RPC reply")
 			}
-			case RPCTypeFindValueReply: {
+		case RPCTypeFindValueReply:
+			{
 				var find_value_reply RPCFindValueReply
 				binary.Decode(response.data, binary.BigEndian, find_value_reply)
 				// update bucket
@@ -170,14 +182,8 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool) {
 	return nil, false
 }
 
-func (kademlia *Kademlia) Store(data []byte) {
-	// TODO
-}
-
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
-	//
 	return kademlia.LookupContactInternal(target, kademlia.mockQueryNodes) // TODO: change to real func that uses SendFindContactMessage to find contact nodes
-
 }
 
 func (kademlia *Kademlia) LookupContactInternal(
@@ -225,6 +231,115 @@ func (kademlia *Kademlia) LookupContactInternal(
 	return getTopContacts(shortlist, bucketSize)
 
 }
+
+func (kademlia *Kademlia) Store(data []byte) error {
+	return kademlia.StoreInternal(data, kademlia.mockStoreNodes)
+}
+
+func (kademlia *Kademlia) StoreInternal(
+	data []byte,
+	storeFn func([]Contact, []byte) map[Contact]error,
+) error {
+	hasher := sha1.New()
+	hasher.Write(data)
+	hashBytes := hasher.Sum(nil)
+
+	hash := KademliaID{}
+	copy(hash[:], hashBytes)
+	key := hash
+
+	kademlia.kv_store[key] = data
+
+	target := NewContact(&key, "")
+	closestContacts := kademlia.LookupContact(&target) // find k closest contacts to send store rpc to
+
+	if len(closestContacts) == 0 {
+		return fmt.Errorf("no nodes found for storage replication")
+	}
+
+	// function that sends the store rpc to each contact
+	results := storeFn(closestContacts, data)
+
+	var errors []error
+	for contact, err := range results {
+		if err != nil {
+			errors = append(errors, fmt.Errorf("failed to store on node %s: %v", contact.Address, err))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("store completed with %d errors: %v", len(errors), errors)
+	}
+
+	return nil
+
+}
+
+func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Contact]error {
+	results := make(map[Contact]error)
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
+
+	for _, contact := range contacts {
+		wg.Add(1)
+		go func(c Contact) {
+			defer wg.Done()
+
+			// Simulate network latency
+			// time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+
+			// Mock storage with 90% success rate
+			if rand.Intn(10) < 9 { // 90% success
+				log.Printf("Mock store successful on %s", c.Address)
+				mutex.Lock()
+				results[c] = nil
+				mutex.Unlock()
+			} else {
+				// Simulate various failure scenarios
+				failures := []error{
+					fmt.Errorf("node unavailable"),
+					fmt.Errorf("storage quota exceeded"),
+					fmt.Errorf("network timeout"),
+				}
+				err := failures[rand.Intn(len(failures))]
+				log.Printf("Mock store failed on %s: %v", c.Address, err)
+				mutex.Lock()
+				results[c] = err
+				mutex.Unlock()
+			}
+		}(contact)
+	}
+
+	wg.Wait()
+	return results
+}
+
+// func (kademlia *Kademlia) realStoreNodes(contacts []Contact, data []byte) map[Contact]error {
+//     results := make(map[Contact]error)
+//     var wg sync.WaitGroup
+//     var mutex sync.Mutex
+
+//     for _, contact := range contacts {
+//         wg.Add(1)
+//         go func(c Contact) {
+//             defer wg.Done()
+
+//             err := kademlia.SendStoreMessage(&c, data)
+//             if err != nil {
+//                 mutex.Lock()
+//                 results[c] = err
+//                 mutex.Unlock()
+//             } else {
+//                 mutex.Lock()
+//                 results[c] = nil
+//                 mutex.Unlock()
+//             }
+//         }(contact)
+//     }
+
+//     wg.Wait()
+//     return results
+// }
 
 // func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
 // 	responseMap := make(map[Contact][]Contact)
@@ -305,7 +420,7 @@ func sortByDistance(contacts []Contact, target *KademliaID) {
 }
 
 // ai generated mock network
-func (kademlia *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
+func (k *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
 	responseMap := make(map[Contact][]Contact)
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -315,17 +430,20 @@ func (kademlia *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *Ka
 		go func(c Contact) {
 			defer wg.Done()
 
-			// More realistic: return contacts that are somewhat close to the target
 			mockResponse := []Contact{}
-			for i := 0; i < 3; i++ {
-				// Create ID that's partially similar to target (more realistic)
+
+			// Generate between 2–4 new contacts
+			numNew := rand.Intn(3) + 2
+			for i := 0; i < numNew; i++ {
 				mockID := NewRandomKademliaID()
-				// Make it somewhat similar to target for realism
-				for j := 0; j < IDLength/2; j++ {
-					mockID[j] = targetID[j] // Copy first half from target
+
+				// 50% chance: make ID share a prefix with target (close node)
+				if rand.Intn(2) == 0 {
+					copy(mockID[:2], targetID[:2]) // share 2 bytes of prefix
 				}
-				mockContact := NewContact(mockID, fmt.Sprintf("mock-node-%d", i))
-				mockContact.CalcDistance(targetID) // Calculate distance
+
+				mockContact := NewContact(mockID, fmt.Sprintf("mock-%s-%d", c.ID.String()[:6], i))
+				mockContact.CalcDistance(targetID)
 				mockResponse = append(mockResponse, mockContact)
 			}
 
@@ -358,7 +476,6 @@ func (kademlia *Kademlia) SendFindContactMessage(recipient *Contact, key *Kademl
 
 	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
 
-
 	kademlia.net.SendData(recipient, write_buf)
 }
 
@@ -370,7 +487,6 @@ func (kademlia *Kademlia) SendFindDataMessage(recipient *Contact, hash string) {
 	rpc.target_key_id = *NewKademliaID(hash)
 	write_buf, _ := binary.Append(nil, binary.BigEndian, rpc)
 
-
 	kademlia.net.SendData(recipient, write_buf)
 }
 
@@ -378,7 +494,7 @@ func (kademlia *Kademlia) SendStoreMessage(recipient *Contact, data []byte) {
 	var rpc RPCStore
 	rpc.header.typ = RPCTypeStore
 	rpc.header.id = *NewRandomKademliaID()
-	
+
 	rpc.data_size = uint64(len(data))
 	rpc.data = data
 
