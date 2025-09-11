@@ -5,6 +5,7 @@ import (
 	"time"
 	"bytes"
 	"fmt"
+	"crypto/sha1"
 )
 
 func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
@@ -135,7 +136,7 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 }
 
 func TestStoreWithNodeTracking(t *testing.T) {
-	network := NewMockNetwork()
+	network := NewMockNetwork(0, 0)
 	me := NewContact(NewRandomKademliaID(), "localhost:8000")
 	k := &Kademlia{
 		routingTable: NewRoutingTable(me),
