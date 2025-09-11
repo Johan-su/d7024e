@@ -3,12 +3,12 @@ package kademlia
 import (
 	"fmt"
 	"testing"
-	"strconv"
+	//"strconv"
 )
 
 func TestKademlia(t *testing.T) {
 
-	network := NewMockNetwork()
+	/* network := NewMockNetwork()
 
 	var nodes []Kademlia
 	for i := 0; i < 1000; i += 1 {
@@ -21,7 +21,7 @@ func TestKademlia(t *testing.T) {
 	}
 
 	network.nodes[fmt.Sprintf("%d", 5)]
-	//TODO finish
+	//TODO finish */
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {

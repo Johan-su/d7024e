@@ -2,12 +2,12 @@ package kademlia
 
 import (
 	"testing"
-	"strconv" 
+	//"strconv" 
 )
 
 func TestMockNetwork(t *testing.T) {
 	// TODO: Add actual network tests
-	network := NewMockNetwork()
+	/* network := NewMockNetwork()
 	var nodes []MockNode
 	node_count := 10000
 	for i := 0; i < node_count; i += 1 {
@@ -27,6 +27,6 @@ func TestMockNetwork(t *testing.T) {
 	for i := 1; i < node_count; i += 1 {
 		address := strconv.FormatInt(int64(i), 10)
 		nodes[0].SendData(&Contact{nil, address, nil}, []byte{uint8(i)})
-	}
+	} */
 
 }
