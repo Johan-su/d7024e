@@ -24,6 +24,7 @@ func NewKademliaID(data string) *KademliaID {
 	return &newKademliaID
 }
 
+// sha1 hasher actually produces 21 bytes but we ignore the last byte
 func Sha1toKademlia(data []byte) *KademliaID {
 	h := sha1.New()
 	bid := h.Sum(data)

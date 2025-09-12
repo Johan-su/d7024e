@@ -5,6 +5,7 @@ import (
 	"log"
 	"fmt"
 	"sync"
+	"time"
 	"math/rand"
 )
 
@@ -14,7 +15,7 @@ type Message struct {
 }
 
 type Node interface {
-	Listen() Message
+	Listen(address string) Message
 	SendData(address string, data []byte)
 }
 
@@ -29,6 +30,7 @@ type MockNetwork struct {
 	receive_log map[string][]Message
 }
 
+// the created nodes' addresses are equal to their positions in the nodes array
 func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 	n := new(MockNetwork)
 	n.ip_to_queue = make(map[string]chan Message)
@@ -36,7 +38,10 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 	n.receive_log = make(map[string][]Message)
 	for i := 0; i < node_count; i += 1 {
 		address := fmt.Sprintf("%d", i)
-		n.nodes = append(n.nodes, NewKademlia(address, NewMockNode(address, n)))
+		mock_node := new(MockNode)
+		mock_node.network = n
+		mock_node.address = address
+		n.nodes = append(n.nodes, NewKademlia(address, mock_node))
 		// TODO: make channel buffer count global constant
 		n.ip_to_queue[address] = make(chan Message, 8)
 	}
@@ -49,26 +54,45 @@ func (network *MockNetwork) AllNodesListen() {
 	}
 }
 
+func (net *MockNetwork) WaitForSettledNetwork() {
+	prev_send_count := 0
+	prev_receive_count := 0
+	for {
+		send_count := 0
+		receive_count := 0
+		net.mu.Lock()
+		for _, v := range net.send_log {
+			send_count += len(v)
+		}
+		for _, v := range net.receive_log {
+			receive_count += len(v)
+		}
+		net.mu.Unlock()
+
+		if send_count == prev_send_count && receive_count == prev_receive_count {
+			break
+		} else {
+			prev_send_count = send_count
+			prev_receive_count = receive_count
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 type MockNode struct {
-	listen_ip string
+	address string
 	network *MockNetwork	
 }
 
-func NewMockNode(listen_ip string, network *MockNetwork) Node {
-	node := new(MockNode)
-	node.listen_ip = listen_ip
-	node.network = network
-	return node
-}
 
-func (node *MockNode) Listen() Message {
+func (node *MockNode) Listen(address string) Message {
 
 	node.network.mu.Lock()
-	channel := node.network.ip_to_queue[node.listen_ip]
+	channel := node.network.ip_to_queue[address]
 	node.network.mu.Unlock()
 	rep := <- channel
 	node.network.mu.Lock()
-	node.network.receive_log[node.listen_ip] = append(node.network.receive_log[node.listen_ip], rep)
+	node.network.receive_log[address] = append(node.network.receive_log[address], rep)
 	node.network.mu.Unlock()
 	return rep
 }
@@ -78,33 +102,32 @@ func (node *MockNode) SendData(address string, data []byte) {
 	channel := node.network.ip_to_queue[address]
 	node.network.mu.Unlock()
 
+	dat := Message{node.address, data}
+	node.network.mu.Lock()
+	node.network.send_log[node.address] = append(node.network.send_log[node.address], dat)
+	node.network.mu.Unlock()
 	if node.network.packet_loss < rand.Float32() {
-		dat := Message{node.listen_ip, data}
 		channel <- dat 
-		node.network.mu.Lock()
-		node.network.send_log[node.listen_ip] = append(node.network.send_log[node.listen_ip], dat)
-		node.network.mu.Unlock()
 	}
 }
 
 type UDPNode struct {
-	listen_ip string
-	listen_port int
 }
 
-func NewUDPNode(listen_ip string, listen_port int) Node {
+func NewUDPNode() Node {
 
 	net := new(UDPNode)
-	net.listen_ip = listen_ip
-	net.listen_port = listen_port
 	return net
 }
 
-func (network *UDPNode) Listen() Message {
-	addr := net.UDPAddr{Port: network.listen_port, IP: net.ParseIP(network.listen_ip)}
+func (network *UDPNode) Listen(address string) Message {
+	addr, err := net.ResolveUDPAddr("udp", address)
+	if err != nil {
+		log.Fatalf("Invalid UDP/IP address, %v\n", err)
+	}
 	
 	fmt.Printf("listening...\n")
-	conn, err := net.ListenUDP("udp", &addr)
+	conn, err := net.ListenUDP("udp", addr)
 	if (err != nil) {
 		log.Fatalf("Failed to listen %v\n", err)
 	}
@@ -120,9 +143,11 @@ func (network *UDPNode) Listen() Message {
 }
 	
 func (network *UDPNode) SendData(address string, data []byte) {
-	// TODO maybe make port a global parameter
-	addr := net.UDPAddr{Port: 8000, IP: net.ParseIP(address)}
-	conn, err := net.DialUDP("udp", nil, &addr)
+	addr, err := net.ResolveUDPAddr("udp", address)
+	if err != nil {
+		log.Fatalf("Invalid UDP/IP address, %v\n", err)
+	}
+	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		log.Fatalf("Failed to send data, %v\n", err)
 	}

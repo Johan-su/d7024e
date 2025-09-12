@@ -2,11 +2,9 @@ package kademlia
 
 import (
 	"testing"
-	"time"
 	"bytes"
 	"strings"
 	"fmt"
-	"crypto/sha1"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
@@ -16,6 +14,7 @@ func RemoveUnordered[T any](arr []T, index int) []T {
 	return arr
 }
 
+//TODO make expect not care about order 
 func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 	var msg_data []byte
 	{
@@ -35,6 +34,7 @@ func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 	}
 }
 
+//TODO make expect not care about order 
 func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address string, typ RPCType) {
 	var msg_data []byte
 	var msg_address string
@@ -56,6 +56,7 @@ func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address 
 	}
 }
 
+
 func TestKademlia(t *testing.T) {
 
 	network := NewMockNetwork(20, 0)
@@ -69,8 +70,7 @@ func TestKademlia(t *testing.T) {
 
 	network.nodes[15].SendPingMessage("4", false)
 
-
-	time.Sleep(500 * time.Millisecond)
+	network.WaitForSettledNetwork()
 
 	//TODO change so the expect function allows for any message order
 	ExpectSend(t, network, "4", RPCTypePing)
@@ -91,16 +91,9 @@ func TestKademlia(t *testing.T) {
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
-	// xreate a mock Kademlia node
-	network := NewMockNetwork(0, 0)
-	me := NewContact(NewRandomKademliaID(), "localhost:8000")
-	k := &Kademlia{
-		routingTable: NewRoutingTable(me),
-		net:          NewMockNode("localhost", network),
-	}
-
+	network := NewMockNetwork(1, 0)
 	// add the node itself to its routing table
-	k.routingTable.AddContact(me)
+	network.nodes[0].routingTable.AddContact(network.nodes[0].routingTable.me)
 
 	// create target and some initial contacts
 	target := NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "target")
@@ -112,13 +105,13 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 		contact := NewContact(NewRandomKademliaID(), fmt.Sprintf("node-%d", i))
 		contact.CalcDistance(target.ID) // Calculate distance for display
 		fmt.Printf("Added contact %d: %s (distance: %s)\n", i, contact.String(), contact.distance)
-		k.routingTable.AddContact(contact)
+		network.nodes[0].routingTable.AddContact(contact)
 	}
 	fmt.Println()
 
 	// test the algorithm with mock network function
 	fmt.Println("=== Starting LookupContactInternal ===")
-	result := k.LookupContact(&target)
+	result := network.nodes[0].LookupContact(&target)
 
 	fmt.Println("=== Final Results ===")
 	fmt.Printf("Found %d results:\n", len(result))
@@ -151,40 +144,22 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 }
 
 func TestStoreWithNodeTracking(t *testing.T) {
-	network := NewMockNetwork(0, 0)
-	me := NewContact(NewRandomKademliaID(), "localhost:8000")
-	k := &Kademlia{
-		routingTable: NewRoutingTable(me),
-		net:          NewMockNode("localhost", network),
-		kv_store:     make(map[KademliaID][]byte),
-	}
 
-	contacts := []Contact{
-		NewContact(NewRandomKademliaID(), "node-1:8000"),
-		NewContact(NewRandomKademliaID(), "node-2:8000"),
-		NewContact(NewRandomKademliaID(), "node-3:8000"),
-	}
+	network := NewMockNetwork(4, 0)
 
-	for _, contact := range contacts {
-		k.routingTable.AddContact(contact)
+	for i := 1; i < 4; i += 1 {
+		network.nodes[0].routingTable.AddContact(network.nodes[i].routingTable.me)
 	}
-	k.routingTable.AddContact(me) // add self last to see if it gets selected
+	network.nodes[0].routingTable.AddContact(network.nodes[0].routingTable.me) // add self last to see if it gets selected
 
-	// test data
 	testData := []byte("test data for storage")
+	data_hash := Sha1toKademlia(testData)
 
-	hasher := sha1.New()
-	hasher.Write(testData)
-	hashBytes := hasher.Sum(nil)
-	hash := KademliaID{}
-	copy(hash[:], hashBytes)
+	t.Logf("Data hash: %v\n", data_hash)
+	t.Logf("Data content: %s\n", string(testData))
 
-	t.Logf("Data hash: %s", hash.String())
-	t.Logf("Data content: %s", string(testData))
+	err := network.nodes[0].Store(testData)
 
-	err := k.Store(testData)
-
-	// log results
 	if err != nil {
 		t.Logf("Store completed with errors: %v", err)
 	} else {
@@ -192,8 +167,9 @@ func TestStoreWithNodeTracking(t *testing.T) {
 	}
 
 	// verify local storage
-	if _, exists := k.kv_store[hash]; !exists {
+	if _, exists := network.nodes[0].kv_store[*data_hash]; !exists {
 		t.Fatal("Data should be stored locally")
 	}
 	t.Log("Data successfully stored locally")
+
 }
