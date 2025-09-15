@@ -68,26 +68,26 @@ type RPCStoreReply struct {
 	header RPCHeader
 }
 
-type RPCFindNodeReply struct {
-	header        RPCHeader
-	contact_count uint16
-	contacts      []Contact
+type KademliaTriple struct {
+	id KademliaID
+	addr_len uint64
+	address string
 }
 
 // returns either data or triples
-type RPCFindValueReply struct {
+type RPCFindReply struct {
 	header        RPCHeader
 	data_size     uint64
 	contact_count uint16
 	data          []byte
-	contacts      []Contact
+	contacts      []KademliaTriple
 }
 
+// max parallel RPCS
 const alpha = 3
 
 type Reply struct {
 	rpc_id KademliaID
-
 
 	// only important for handling full bucket updates 
 	remove_from_bucket_if_timeout bool 
@@ -102,6 +102,8 @@ type Kademlia struct {
 	mu_reply_list sync.Mutex
 	reply_list []Reply
 
+	find_responses chan RPCFindReply
+
 	net Node
 }
 
@@ -110,6 +112,7 @@ func NewKademlia(address string, net Node) Kademlia {
 	id := NewRandomKademliaID()
 	k.routingTable = NewRoutingTable(NewContact(id, address))
 	k.kv_store = make(map[KademliaID][]byte) 
+	k.find_responses = make(chan RPCFindReply, 4*alpha)
 	k.net = net
 	return k
 }
@@ -161,12 +164,12 @@ func (kademlia *Kademlia) BucketUpdate(address string, node_id KademliaID) {
 	}
 }
 
-
 func (kademlia *Kademlia) HandleResponse() {
 	var err error
 	meaddr := kademlia.routingTable.me.Address
 	for {
 		response := kademlia.net.Listen(meaddr)
+		fmt.Printf("dat: %v\n", response)
 		reader := bytes.NewReader(response.data)
 		var header RPCHeader
 		err = PartialRead(reader, &header)
@@ -176,7 +179,7 @@ func (kademlia *Kademlia) HandleResponse() {
 		// receiving
 		switch header.Typ {
 			case RPCTypeInvalid: {
-				log.Printf("Got Invalid RPC\n")
+				log.Printf("[%v] invalid\n", meaddr)
 			}
 			case RPCTypePing: {
 				log.Printf("[%v] ping\n", meaddr)
@@ -190,7 +193,7 @@ func (kademlia *Kademlia) HandleResponse() {
 					store.header = header
 					err = PartialRead(reader, &store.data_size)
 					if err != nil {
-						log.Printf("%v\n", err)
+						log.Fatalf("%v\n", err)
 					}
 					store.data = make([]byte, store.data_size)
 					reader.Read(store.data)
@@ -203,7 +206,15 @@ func (kademlia *Kademlia) HandleResponse() {
 			case RPCTypeFindNode: {
 				log.Printf("[%v] find_node\n", meaddr)
 				var find_node RPCFindNode
+				{
+					find_node.header = header
+					PartialRead(reader, &find_node.target_node_id)
+					if err != nil {
+						log.Fatalf("%v\n", err)
+					}
+				}
 				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
+				fmt.Printf("contacts: %v\n", contacts)
 				kademlia.SendFindContactReplyMessage(response.from_address, &header.Rpc_id, contacts)
 			}
 			case RPCTypeFindValue: {
@@ -234,7 +245,7 @@ func (kademlia *Kademlia) HandleResponse() {
 				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
 					// var store_reply RPCStoreReply
 					kademlia.BucketUpdate(response.from_address, header.Node_id)
-					panic("TODO Store RPC reply")
+					//TODO: maybe handle errors or smth
 				} else {
 					log.Printf("Got unexpected store reply, might have timed out\n")
 				}
@@ -242,9 +253,41 @@ func (kademlia *Kademlia) HandleResponse() {
 			case RPCTypeFindNodeReply: {
 				log.Printf("[%v] find_node_reply\n", meaddr)
 				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
-					// var find_node_reply RPCFindNodeReply
+					var find_node_reply RPCFindReply
+					{
+						find_node_reply.header = header
+						err = PartialRead(reader, &find_node_reply.data_size)
+						if err != nil {
+							log.Fatalf("%v\n", err)
+						}
+						err = PartialRead(reader, &find_node_reply.contact_count)
+						if err != nil {
+							log.Fatalf("%v\n", err)
+						}
+						find_node_reply.contacts = make([]KademliaTriple, find_node_reply.contact_count)
+						for i := 0; i < int(find_node_reply.contact_count); i += 1 {
+							var tri KademliaTriple
+							PartialRead(reader, &tri.id)
+							if err != nil {
+								log.Fatalf("%v\n", err)
+							}
+							PartialRead(reader, &tri.addr_len)
+							if err != nil {
+								log.Fatalf("%v\n", err)
+							}
+							b := make([]byte, tri.addr_len)
+							err = binary.Read(reader, binary.NativeEndian, &b)
+							if err != nil {
+								log.Fatalf("%v\n", err)
+							}
+
+							find_node_reply.contacts[i] = tri
+						}
+						fmt.Printf("find_node_reply %v\n", find_node_reply)
+					}
+
 					kademlia.BucketUpdate(response.from_address, header.Node_id)
-					panic("TODO find node RPC reply")
+					kademlia.find_responses <- find_node_reply
 				} else {
 					log.Printf("[%v] Got unexpected find node reply, might have timed out\n", meaddr)
 				}
@@ -252,10 +295,35 @@ func (kademlia *Kademlia) HandleResponse() {
 			case RPCTypeFindValueReply: {
 				log.Printf("[%v] find_value_reply\n", meaddr)
 				if kademlia.RemoveIfInReplyList(header.Rpc_id) {
-					var find_value_reply RPCFindValueReply
-					binary.Decode(response.data, binary.NativeEndian, find_value_reply)
+					var find_value_reply RPCFindReply
+					{
+						find_value_reply.header = header
+						err = PartialRead(reader, &find_value_reply.data_size)
+						if err != nil {
+							log.Fatalf("%v\n", err)
+						}
+						if find_value_reply.data_size == 0 {
+							err = PartialRead(reader, &find_value_reply.contact_count)
+							if err != nil {
+								log.Fatalf("%v\n", err)
+							}
+							find_value_reply.contacts = make([]KademliaTriple, find_value_reply.contact_count)
+							for i := 0; i < int(find_value_reply.contact_count); i += 1 {
+								var tri KademliaTriple
+								PartialRead(reader, &tri)
+								if err != nil {
+									log.Fatalf("%v\n", err)
+								}
+								find_value_reply.contacts[i] = tri
+							}
+						} else {
+							find_value_reply.data = make([]byte, find_value_reply.data_size)
+							reader.Read(find_value_reply.data)
+						}
+					}
+
 					kademlia.BucketUpdate(response.from_address, header.Node_id)
-					panic("TODO find value RPC reply")
+					kademlia.find_responses <- find_value_reply
 				} else {
 					log.Printf("Got unexpected find value reply, might have timed out\n")
 				}
@@ -271,12 +339,12 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool) {
 }
 
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
-	return kademlia.LookupContactInternal(target, kademlia.mockQueryNodes) // TODO: change to real func that uses SendFindContactMessage to find contact nodes
+	return kademlia.LookupContactInternal(target, kademlia.queryNodes) // TODO: change to real func that uses SendFindContactMessage to find contact nodes
 }
 
 func (kademlia *Kademlia) LookupContactInternal(
 	target *Contact,
-	queryFn func([]Contact, *KademliaID) map[Contact][]Contact, //function that will return the queried Node and its Contacts
+	queryFn func([]Contact, *KademliaID) []Contact, //function that will return the queried Node and its Contacts
 ) []Contact {
 
 	// "The first alpha contacts selected are used to create a shortlist for the search."
@@ -284,14 +352,13 @@ func (kademlia *Kademlia) LookupContactInternal(
 	shortlist := make([]Contact, len(initalCandidates))
 	copy(shortlist, initalCandidates)
 
-	//write sorting helper
 	sortByDistance(shortlist, target.ID)
 	queried := make(map[string]bool)
 
 	unchangedRounds := 0
 
 	for unchangedRounds < 3 {
-		toQuery := selectUnqueriedNodes(shortlist, queried, bucketSize) // helper to select nodes that hasnt been queried already
+		toQuery := selectUnqueriedNodes(shortlist, queried, alpha) // helper to select nodes that hasnt been queried already
 
 		for _, contact := range toQuery {
 			queried[contact.ID.String()] = true
@@ -303,11 +370,8 @@ func (kademlia *Kademlia) LookupContactInternal(
 			break
 		}
 
-		responseMap := queryFn(toQuery, target.ID) // mock until real with network is implemented
-
-		for _, newContacts := range responseMap {
-			shortlist = mergeAndSort(shortlist, newContacts, target.ID)
-		}
+		responselist := queryFn(toQuery, target.ID) // mock until real with network is implemented
+		shortlist = mergeAndSort(shortlist, responselist, target.ID)
 
 		if shortlist[0].ID.Equals(oldClosest.ID) {
 			unchangedRounds++
@@ -437,34 +501,32 @@ func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Co
 //     return results
 // }
 
-// func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
-// 	responseMap := make(map[Contact][]Contact)
-// 	var wg sync.WaitGroup
-// 	var mutex sync.Mutex
+func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) []Contact {
+	length := len(contactsToQuery)
+	if length > alpha {
+		panic("illegal")
+	}
 
-// 	for _, contact := range contactsToQuery {
-// 		wg.Add(1)
-// 		go func(c Contact) {
-// 			defer wg.Done()
+	var responses []Contact
 
-// 			foundContacts, err := net.SendFindContactMessage(&c, targetID)
-// 			if err != nil {
-// 				log.Printf("Failed to query node %s: %v\n", c.Address, err)
-// 				return
-// 			}
+	// strict parallelism
+	for i := 0; i < length; i += 1 {
+		go kademlia.SendFindContactMessage(contactsToQuery[i].Address, targetID)
+	}
 
-// 			mutex.Lock()
-// 			responseMap[c] = foundContacts
-// 			mutex.Unlock()
-// 		}(contact)
-// 	}
-
-// 	wg.Wait()
-// 	return responseMap
-// }
+	chan_len := len(kademlia.find_responses)
+	for chan_len > 0 {
+		response := <- kademlia.find_responses
+		for _, triple := range response.contacts {
+			c := Contact{&triple.id, triple.address, nil}
+			responses = append(responses, c)
+		}
+	}
+	return responses
+}
 
 func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) []Contact {
-	var result []Contact
+var result []Contact
 	for _, contact := range shortlist {
 		if !queried[contact.ID.String()] && len(result) < n {
 			result = append(result, contact)
@@ -486,12 +548,7 @@ func mergeAndSort(shortlist, newContacts []Contact, target *KademliaID) []Contac
 		}
 	}
 
-	for i := range unique {
-		unique[i].CalcDistance(target)
-	}
-	sort.Slice(unique, func(i, j int) bool {
-		return unique[i].Less(&unique[j])
-	})
+	sortByDistance(unique, target)
 	if len(unique) > bucketSize {
 		return unique[:bucketSize]
 	}
@@ -516,43 +573,46 @@ func sortByDistance(contacts []Contact, target *KademliaID) {
 }
 
 // ai generated mock network
-func (k *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaID) map[Contact][]Contact {
-	responseMap := make(map[Contact][]Contact)
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
+func (k *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaID) []Contact {
+	// responseMap := make(map[Contact][]Contact)
+	// var wg sync.WaitGroup
+	// var mutex sync.Mutex
 
-	for _, contact := range contactsToQuery {
-		wg.Add(1)
-		go func(c Contact) {
-			defer wg.Done()
+	// for _, contact := range contactsToQuery {
+	// 	wg.Add(1)
+	// 	go func(c Contact) {
+	// 		defer wg.Done()
 
-			mockResponse := []Contact{}
+	// 		mockResponse := []Contact{}
 
-			// Generate between 2–4 new contacts
-			numNew := rand.Intn(3) + 2
-			for i := 0; i < numNew; i++ {
-				mockID := NewRandomKademliaID()
+	// 		// Generate between 2–4 new contacts
+	// 		numNew := rand.Intn(3) + 2
+	// 		for i := 0; i < numNew; i++ {
+	// 			mockID := NewRandomKademliaID()
 
-				// 50% chance: make ID share a prefix with target (close node)
-				if rand.Intn(2) == 0 {
-					copy(mockID[:2], targetID[:2]) // share 2 bytes of prefix
-				}
+	// 			// 50% chance: make ID share a prefix with target (close node)
+	// 			if rand.Intn(2) == 0 {
+	// 				copy(mockID[:2], targetID[:2]) // share 2 bytes of prefix
+	// 			}
 
-				mockContact := NewContact(mockID, fmt.Sprintf("mock-%s-%d", c.ID.String()[:6], i))
-				mockContact.CalcDistance(targetID)
-				mockResponse = append(mockResponse, mockContact)
-			}
+	// 			mockContact := NewContact(mockID, fmt.Sprintf("mock-%s-%d", c.ID.String()[:6], i))
+	// 			mockContact.CalcDistance(targetID)
+	// 			mockResponse = append(mockResponse, mockContact)
+	// 		}
 
-			mutex.Lock()
-			responseMap[c] = mockResponse
-			mutex.Unlock()
-		}(contact)
-	}
+	// 		mutex.Lock()
+	// 		responseMap[c] = mockResponse
+	// 		mutex.Unlock()
+	// 	}(contact)
+	// }
 
-	wg.Wait()
-	return responseMap
+	// wg.Wait()
+	// return responseMap
+	return nil
 }
 
+
+// RPCS as defined in the kademlia spec
 func (kademlia *Kademlia) SendPingMessage(address string, remove_from_bucket_if_timeout bool) {
 	var rpc RPCPing
 	rpc.header.Typ = RPCTypePing
@@ -561,6 +621,7 @@ func (kademlia *Kademlia) SendPingMessage(address string, remove_from_bucket_if_
 	var reply Reply
 	reply.rpc_id = rpc.header.Rpc_id
 	reply.remove_from_bucket_if_timeout = remove_from_bucket_if_timeout
+	// TODO: handle timeouts correctly
 	kademlia.AddToReplyList(reply) 
 	
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
@@ -630,21 +691,49 @@ func (kademlia *Kademlia) SendPingReplyMessage(address string, id *KademliaID) {
 }
 
 func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *KademliaID, contacts []Contact) {
-	var rpc RPCFindNodeReply
+	var rpc RPCFindReply
 	rpc.header.Typ = RPCTypeFindNodeReply
 	rpc.header.Rpc_id = *id
 	rpc.header.Node_id = *kademlia.routingTable.me.ID
 
 	rpc.contact_count = uint16(len(contacts))
-	rpc.contacts = contacts
+	for _, c := range contacts {
+		rpc.contacts = append(rpc.contacts, KademliaTriple{*c.ID, uint64(len(c.Address)), c.Address})
+	}
+	fmt.Printf("rpc: %v\n", rpc)
 
-	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
+	var write_buf []byte
+	var err error
 
+	write_buf, err = binary.Append(write_buf, binary.NativeEndian, rpc.header)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+	write_buf, err = binary.Append(write_buf, binary.NativeEndian, rpc.data_size)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+	write_buf, err = binary.Append(write_buf, binary.NativeEndian, rpc.contact_count)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+	for _, c := range rpc.contacts {
+		write_buf, err = binary.Append(write_buf, binary.NativeEndian, c.id)
+		if err != nil {
+			log.Fatalf("%v\n", err)
+		}
+		write_buf, err = binary.Append(write_buf, binary.NativeEndian, c.addr_len)
+		if err != nil {
+			log.Fatalf("%v\n", err)
+		}
+		write_buf = append(write_buf, []byte(c.address)...)
+	}
+	fmt.Printf("write_buf: %v\n", write_buf)
 	kademlia.net.SendData(address, write_buf)
 }
 
 func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaID, data []byte, contacts []Contact) {
-	var rpc RPCFindValueReply
+	var rpc RPCFindReply
 	rpc.header.Typ = RPCTypeFindValue
 	rpc.header.Rpc_id = *id
 	rpc.header.Node_id = *kademlia.routingTable.me.ID
@@ -652,8 +741,14 @@ func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaI
 	rpc.data_size = uint64(len(data))
 	rpc.contact_count = uint16(len(contacts))
 
+	if (rpc.data_size > 0 && rpc.contact_count > 0) {
+		log.Fatalf("FindData Rpc can either have data or contacts not both")
+	}
+
 	rpc.data = data
-	rpc.contacts = contacts
+	for _, c := range contacts {
+		rpc.contacts = append(rpc.contacts, KademliaTriple{*c.ID, uint64(len(c.Address)), c.Address})
+	}
 
 	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
 

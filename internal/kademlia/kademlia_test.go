@@ -56,8 +56,7 @@ func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address 
 	}
 }
 
-
-func TestKademlia(t *testing.T) {
+func TestPing(t *testing.T) {
 
 	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
@@ -88,6 +87,37 @@ func TestKademlia(t *testing.T) {
 	ExpectSend(t, network, "15", RPCTypePingReply)
 	ExpectSend(t, network, "15", RPCTypePingReply)
 	ExpectSend(t, network, "4", RPCTypePingReply)
+}
+
+func TestFindContact(t *testing.T) {
+	
+	network := NewMockNetwork(3, 0)
+	network.AllNodesListen()
+	
+	network.nodes[2].routingTable.me.ID = NewKademliaID("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
+	c := network.nodes[2].routingTable.me
+
+	network.nodes[1].routingTable.AddContact(c)
+	network.nodes[0].SendFindContactMessage("1", c.ID)
+
+	for i, n := range network.nodes {
+		fmt.Printf("node %v %v\n", i, n.routingTable.me.ID)
+	}
+
+
+	network.WaitForSettledNetwork()
+
+	ExpectSend(t, network, "0", RPCTypeFindNode)
+	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
+	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
+	
+	fmt.Printf("len(network.nodes[0].find_responses): %v\n", len(network.nodes[0].find_responses))
+
+	val := <- network.nodes[0].find_responses
+	fmt.Printf("val %v\n", val)
+	if !val.contacts[0].id.Equals(c.ID) {
+		t.Errorf("Expected %v got %v", c.ID, &val.contacts[0].id)
+	}
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {

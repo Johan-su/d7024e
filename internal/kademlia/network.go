@@ -43,7 +43,7 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		mock_node.address = address
 		n.nodes = append(n.nodes, NewKademlia(address, mock_node))
 		// TODO: make channel buffer count global constant
-		n.ip_to_queue[address] = make(chan Message, 8)
+		n.ip_to_queue[address] = make(chan Message, 4*alpha)
 	}
 	return n
 }
