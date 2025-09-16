@@ -169,7 +169,6 @@ func (kademlia *Kademlia) HandleResponse() {
 	meaddr := kademlia.routingTable.me.Address
 	for {
 		response := kademlia.net.Listen(meaddr)
-		fmt.Printf("dat: %v\n", response)
 		reader := bytes.NewReader(response.data)
 		var header RPCHeader
 		err = PartialRead(reader, &header)
@@ -214,7 +213,6 @@ func (kademlia *Kademlia) HandleResponse() {
 					}
 				}
 				contacts := kademlia.routingTable.FindClosestContacts(&find_node.target_node_id, bucketSize)
-				fmt.Printf("contacts: %v\n", contacts)
 				kademlia.SendFindContactReplyMessage(response.from_address, &header.Rpc_id, contacts)
 			}
 			case RPCTypeFindValue: {
@@ -283,7 +281,6 @@ func (kademlia *Kademlia) HandleResponse() {
 
 							find_node_reply.contacts[i] = tri
 						}
-						fmt.Printf("find_node_reply %v\n", find_node_reply)
 					}
 
 					kademlia.BucketUpdate(response.from_address, header.Node_id)
@@ -700,7 +697,6 @@ func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *Kademl
 	for _, c := range contacts {
 		rpc.contacts = append(rpc.contacts, KademliaTriple{*c.ID, uint64(len(c.Address)), c.Address})
 	}
-	fmt.Printf("rpc: %v\n", rpc)
 
 	var write_buf []byte
 	var err error
@@ -728,7 +724,6 @@ func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *Kademl
 		}
 		write_buf = append(write_buf, []byte(c.address)...)
 	}
-	fmt.Printf("write_buf: %v\n", write_buf)
 	kademlia.net.SendData(address, write_buf)
 }
 

@@ -111,7 +111,6 @@ func TestFindContact(t *testing.T) {
 	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
 	
-	fmt.Printf("len(network.nodes[0].find_responses): %v\n", len(network.nodes[0].find_responses))
 
 	val := <- network.nodes[0].find_responses
 	fmt.Printf("val %v\n", val)
