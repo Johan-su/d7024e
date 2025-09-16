@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"strings"
 	"fmt"
+	"math/rand"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
@@ -113,21 +114,21 @@ func TestFindContact(t *testing.T) {
 	
 
 	val := <- network.nodes[0].find_responses
-	fmt.Printf("val %v\n", val)
 	if !val.contacts[0].id.Equals(c.ID) {
 		t.Errorf("Expected %v got %v", c.ID, &val.contacts[0].id)
 	}
 }
 
 func TestJoin(t *testing.T) {
+	rand.Seed(0)
 	network := NewMockNetwork(100, 0)
 	network.AllNodesListen()
 
 	for i := 1; i < len(network.nodes); i += 1 {
 		network.nodes[i].Join(network.nodes[0].routingTable.me)
 	}
-
 	network.WaitForSettledNetwork()
+	// TODO maybe check if it actually works
 }
 
 
@@ -138,48 +139,34 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 
 	// create target and some initial contacts
 	target := NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "target")
-	fmt.Printf("Target contact: %s\n", target.String())
 
 	// add some mock contacts to the routing table for testing
-	fmt.Println("=== Adding contacts to routing table ===")
 	for i := 0; i < 5; i++ {
 		contact := NewContact(NewRandomKademliaID(), fmt.Sprintf("node-%d", i))
 		contact.CalcDistance(target.ID) // Calculate distance for display
-		fmt.Printf("Added contact %d: %s (distance: %s)\n", i, contact.String(), contact.distance)
 		network.nodes[0].routingTable.AddContact(contact)
 	}
-	fmt.Println()
 
 	// test the algorithm with mock network function
-	fmt.Println("=== Starting LookupContactInternal ===")
 	result := network.nodes[0].LookupContact(&target)
 
-	fmt.Println("=== Final Results ===")
-	fmt.Printf("Found %d results:\n", len(result))
-	for i, contact := range result {
+	for _, contact := range result {
 		contact.CalcDistance(target.ID)
-		fmt.Printf("  %d: %s (distance: %s)\n", i+1, contact.String(), contact.distance)
 	}
-	fmt.Println()
 
 	if len(result) == 0 {
 		t.Error("Lookup should return results even without real network")
 	}
 
 	// Test that results are sorted by distance to target
-	fmt.Println("=== Verifying sort order ===")
 	for i := 0; i < len(result)-1; i++ {
 		result[i].CalcDistance(target.ID)
 		result[i+1].CalcDistance(target.ID)
-		fmt.Printf("Comparing %s (dist: %s) vs %s (dist: %s)\n",
-			result[i].ID.String()[:8], result[i].distance,
-			result[i+1].ID.String()[:8], result[i+1].distance)
 
 		if !result[i].Less(&result[i+1]) {
 			t.Errorf("Results should be sorted by distance to target. %s should be closer than %s",
 				result[i].distance, result[i+1].distance)
 		} else {
-			fmt.Printf("Correct order: %s < %s\n", result[i].distance.String()[:8], result[i+1].distance.String()[:8])
 		}
 	}
 }
@@ -209,7 +196,7 @@ func TestStoreWithNodeTracking(t *testing.T) {
 
 	// verify local storage
 	if _, exists := network.nodes[0].kv_store[*data_hash]; !exists {
-		t.Fatal("Data should be stored locally")
+		t.Fatal("Data was not stored locally")
 	}
 	t.Log("Data successfully stored locally")
 

@@ -126,7 +126,7 @@ func (network *UDPNode) Listen(address string) Message {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
 	}
 	
-	fmt.Printf("listening...\n")
+	fmt.Printf("listening... at %v\n", address)
 	conn, err := net.ListenUDP("udp", addr)
 	if (err != nil) {
 		log.Fatalf("Failed to listen %v\n", err)

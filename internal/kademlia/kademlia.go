@@ -1,7 +1,6 @@
 package kademlia
 
 import (
-	"crypto/sha1"
 	"fmt"
 	"log"
 	"math/rand"
@@ -31,6 +30,7 @@ type RPCError uint8
 const (
 	RPCErrorNoError = iota
 	RPCErrorLackOfSpace
+	RPCErrorNoNodesFound
 )
 
 type RPCHeader struct {
@@ -198,7 +198,8 @@ func (kademlia *Kademlia) HandleResponse() {
 					reader.Read(store.data)
 				}
 				
-				kademlia.Store(store.data)
+				key := Sha1toKademlia(store.data)
+				kademlia.kv_store[*key] = store.data
 				// TODO maybe send back a error if it failed to store
 				kademlia.SendStoreReplyMessage(response.from_address, &header.Rpc_id, RPCErrorNoError)
 			}
@@ -423,13 +424,7 @@ func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 }
 
 func (kademlia *Kademlia) Store(data []byte) error {
-	return kademlia.StoreInternal(data, kademlia.mockStoreNodes)
-}
 
-func (kademlia *Kademlia) StoreInternal(
-	data []byte,
-	storeFn func([]Contact, []byte) map[Contact]error,
-) error {
 	key := Sha1toKademlia(data)
 
 	kademlia.kv_store[*key] = data
@@ -441,103 +436,12 @@ func (kademlia *Kademlia) StoreInternal(
 		return fmt.Errorf("no nodes found for storage replication")
 	}
 
-	// function that sends the store rpc to each contact
-	results := storeFn(closestContacts, data)
-
-	var errors []error
-	for contact, err := range results {
-		if err != nil {
-			errors = append(errors, fmt.Errorf("failed to store on node %s: %v", contact.Address, err))
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("store completed with %d errors: %v", len(errors), errors)
+	for _, c := range closestContacts {
+		kademlia.SendStoreMessage(c.Address, data)
 	}
 
 	return nil
-
 }
-
-func (kademlia *Kademlia) mockStoreNodes(contacts []Contact, data []byte) map[Contact]error {
-	results := make(map[Contact]error)
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-
-	// Calculate data hash to compute distances
-	hasher := sha1.New()
-	hasher.Write(data)
-	hashBytes := hasher.Sum(nil)
-	dataHash := KademliaID{}
-	copy(dataHash[:], hashBytes)
-
-	// Log which nodes we're attempting to store on with distances
-	log.Printf("Attempting to store on %d nodes (distance to data hash %s):", len(contacts), dataHash.String()[:8])
-	for i, contact := range contacts {
-		contact.CalcDistance(&dataHash)
-		log.Printf("  %d: %s (distance: %s)", i+1, contact.ID.String()[:8], contact.distance.String()[:8])
-	}
-
-	for _, contact := range contacts {
-		wg.Add(1)
-		go func(c Contact) {
-			defer wg.Done()
-
-			// Calculate distance for this specific contact
-			c.CalcDistance(&dataHash)
-
-			// Mock storage with 90% success rate
-			if rand.Intn(10) < 9 { // 90% success
-				log.Printf("Mock store successful on node %s (distance: %s)", c.ID.String()[:8], c.distance.String()[:8])
-				mutex.Lock()
-				results[c] = nil
-				mutex.Unlock()
-			} else {
-				// Simulate various failure scenarios
-				failures := []error{
-					fmt.Errorf("node unavailable"),
-					fmt.Errorf("storage quota exceeded"),
-					fmt.Errorf("network timeout"),
-				}
-				err := failures[rand.Intn(len(failures))]
-				log.Printf("Mock store failed on node %s (distance: %s): %v", c.ID.String()[:8], c.distance.String()[:8], err)
-				mutex.Lock()
-				results[c] = err
-				mutex.Unlock()
-			}
-		}(contact)
-	}
-
-	wg.Wait()
-	return results
-}
-
-// func (kademlia *Kademlia) realStoreNodes(contacts []Contact, data []byte) map[Contact]error {
-//     results := make(map[Contact]error)
-//     var wg sync.WaitGroup
-//     var mutex sync.Mutex
-
-//     for _, contact := range contacts {
-//         wg.Add(1)
-//         go func(c Contact) {
-//             defer wg.Done()
-
-//             err := kademlia.SendStoreMessage(&c, data)
-//             if err != nil {
-//                 mutex.Lock()
-//                 results[c] = err
-//                 mutex.Unlock()
-//             } else {
-//                 mutex.Lock()
-//                 results[c] = nil
-//                 mutex.Unlock()
-//             }
-//         }(contact)
-//     }
-
-//     wg.Wait()
-//     return results
-// }
 
 func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *KademliaID) []Contact {
 	length := len(contactsToQuery)
