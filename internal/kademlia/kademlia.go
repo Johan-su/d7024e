@@ -330,19 +330,61 @@ func (kademlia *Kademlia) HandleResponse() {
 	}
 }
 
+func (kademlia *Kademlia) Refresh(bucketIndex int) {
+	bit_pos := bucketIndex % 8
+	byte_pos := bucketIndex / 8
+
+
+	var id KademliaID
+
+	var partially_random byte
+	partially_random = 1 << bit_pos
+	
+	for i := bit_pos + 1; i < 8; i += 1 {
+		if rand.Float32() > 0.5 {
+			partially_random |= 1 << i
+		}
+	}
+
+	bytes := make([]byte, IDLength - (byte_pos + 1))
+	rand.Read(bytes)
+
+	j := 0
+	for i := byte_pos + 1; i < IDLength; i += 1 {
+		id[i] = bytes[j]
+		j += 1
+	}
+
+
+	kademlia.LookupContact(&Contact{&id, "", nil})
+}
+
+func (kademlia *Kademlia) Join(bootstrapContact Contact) {
+
+	kademlia.routingTable.AddContact(bootstrapContact)
+	closestContacts := kademlia.LookupContact(&kademlia.routingTable.me)
+	
+	bucketIndicies := make([]int, len(closestContacts))
+
+	for i, c := range closestContacts {
+		bucketIndicies[i] = kademlia.routingTable.getBucketIndex(c.ID)
+	}
+
+	sort.Slice(bucketIndicies, func(i, j int) bool {
+		return bucketIndicies[i] < bucketIndicies[j]
+	})
+
+	for i := 1; i < len(bucketIndicies); i += 1 {
+		kademlia.Refresh(bucketIndicies[i])
+	}
+}
+
 func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool) {
 	// TODO
 	return nil, false
 }
 
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
-	return kademlia.LookupContactInternal(target, kademlia.queryNodes) // TODO: change to real func that uses SendFindContactMessage to find contact nodes
-}
-
-func (kademlia *Kademlia) LookupContactInternal(
-	target *Contact,
-	queryFn func([]Contact, *KademliaID) []Contact, //function that will return the queried Node and its Contacts
-) []Contact {
 
 	// "The first alpha contacts selected are used to create a shortlist for the search."
 	initalCandidates := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
@@ -367,7 +409,7 @@ func (kademlia *Kademlia) LookupContactInternal(
 			break
 		}
 
-		responselist := queryFn(toQuery, target.ID) // mock until real with network is implemented
+		responselist := kademlia.queryNodes(toQuery, target.ID)
 		shortlist = mergeAndSort(shortlist, responselist, target.ID)
 
 		if shortlist[0].ID.Equals(oldClosest.ID) {
@@ -378,7 +420,6 @@ func (kademlia *Kademlia) LookupContactInternal(
 
 	}
 	return getTopContacts(shortlist, bucketSize)
-
 }
 
 func (kademlia *Kademlia) Store(data []byte) error {
@@ -568,46 +609,6 @@ func sortByDistance(contacts []Contact, target *KademliaID) {
 		return contacts[i].Less(&contacts[j])
 	})
 }
-
-// ai generated mock network
-func (k *Kademlia) mockQueryNodes(contactsToQuery []Contact, targetID *KademliaID) []Contact {
-	// responseMap := make(map[Contact][]Contact)
-	// var wg sync.WaitGroup
-	// var mutex sync.Mutex
-
-	// for _, contact := range contactsToQuery {
-	// 	wg.Add(1)
-	// 	go func(c Contact) {
-	// 		defer wg.Done()
-
-	// 		mockResponse := []Contact{}
-
-	// 		// Generate between 2–4 new contacts
-	// 		numNew := rand.Intn(3) + 2
-	// 		for i := 0; i < numNew; i++ {
-	// 			mockID := NewRandomKademliaID()
-
-	// 			// 50% chance: make ID share a prefix with target (close node)
-	// 			if rand.Intn(2) == 0 {
-	// 				copy(mockID[:2], targetID[:2]) // share 2 bytes of prefix
-	// 			}
-
-	// 			mockContact := NewContact(mockID, fmt.Sprintf("mock-%s-%d", c.ID.String()[:6], i))
-	// 			mockContact.CalcDistance(targetID)
-	// 			mockResponse = append(mockResponse, mockContact)
-	// 		}
-
-	// 		mutex.Lock()
-	// 		responseMap[c] = mockResponse
-	// 		mutex.Unlock()
-	// 	}(contact)
-	// }
-
-	// wg.Wait()
-	// return responseMap
-	return nil
-}
-
 
 // RPCS as defined in the kademlia spec
 func (kademlia *Kademlia) SendPingMessage(address string, remove_from_bucket_if_timeout bool) {

@@ -119,6 +119,18 @@ func TestFindContact(t *testing.T) {
 	}
 }
 
+func TestJoin(t *testing.T) {
+	network := NewMockNetwork(100, 0)
+	network.AllNodesListen()
+
+	for i := 1; i < len(network.nodes); i += 1 {
+		network.nodes[i].Join(network.nodes[0].routingTable.me)
+	}
+
+	network.WaitForSettledNetwork()
+}
+
+
 func TestLookupLogicMockNetwork(t *testing.T) {
 	network := NewMockNetwork(1, 0)
 	// add the node itself to its routing table
