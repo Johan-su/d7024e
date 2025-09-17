@@ -53,6 +53,8 @@ func main() {
 			} else {
 				fmt.Printf("data not found\n")
 			}
+		} else {
+			fmt.Printf("Invalid command `%s`\n", strs[0])
 		}
 
 	}
