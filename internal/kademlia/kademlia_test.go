@@ -1,21 +1,21 @@
 package kademlia
 
 import (
-	"testing"
 	"bytes"
-	"strings"
 	"fmt"
 	"math/rand"
+	"strings"
+	"testing"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
 	len := len(arr)
-	arr[index] = arr[len - 1]
-	arr = arr[:len - 1]
+	arr[index] = arr[len-1]
+	arr = arr[:len-1]
 	return arr
 }
 
-//TODO make expect not care about order 
+// TODO make expect not care about order
 func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 	var msg_data []byte
 	{
@@ -35,7 +35,7 @@ func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 	}
 }
 
-//TODO make expect not care about order 
+// TODO make expect not care about order
 func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address string, typ RPCType) {
 	var msg_data []byte
 	var msg_address string
@@ -61,7 +61,7 @@ func TestPing(t *testing.T) {
 
 	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
-	
+
 	network.nodes[0].SendPingMessage("19", false)
 	network.nodes[4].SendPingMessage("15", false)
 	network.nodes[5].SendPingMessage("15", false)
@@ -91,10 +91,10 @@ func TestPing(t *testing.T) {
 }
 
 func TestFindContact(t *testing.T) {
-	
+
 	network := NewMockNetwork(3, 0)
 	network.AllNodesListen()
-	
+
 	network.nodes[2].routingTable.me.ID = NewKademliaID("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	c := network.nodes[2].routingTable.me
 
@@ -105,15 +105,13 @@ func TestFindContact(t *testing.T) {
 		fmt.Printf("node %v %v\n", i, n.routingTable.me.ID)
 	}
 
-
 	network.WaitForSettledNetwork()
 
 	ExpectSend(t, network, "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
-	
 
-	val := <- network.nodes[0].find_responses
+	val := <-network.nodes[0].find_responses
 	if !val.contacts[0].id.Equals(c.ID) {
 		t.Errorf("Expected %v got %v", c.ID, &val.contacts[0].id)
 	}
@@ -130,7 +128,6 @@ func TestJoin(t *testing.T) {
 	network.WaitForSettledNetwork()
 	// TODO maybe check if it actually works
 }
-
 
 func TestLookupLogicMockNetwork(t *testing.T) {
 	network := NewMockNetwork(1, 0)
@@ -199,5 +196,27 @@ func TestStoreWithNodeTracking(t *testing.T) {
 		t.Fatal("Data was not stored locally")
 	}
 	t.Log("Data successfully stored locally")
+}
 
+func TestLookupDataSingleHop(t *testing.T) {
+	network := NewMockNetwork(2, 0)
+	network.AllNodesListen()
+
+	// store test data on node 1
+	testData := []byte("hello kademlia")
+	key := Sha1toKademlia(testData)
+	network.nodes[1].kv_store[*key] = testData
+
+	// make node 0 aware of node 1
+	network.nodes[0].routingTable.AddContact(network.nodes[1].routingTable.me)
+
+	// now call LookupData on node 0
+	data, found, _ := network.nodes[0].LookupData(key.String())
+
+	if !found {
+		t.Fatalf("Expected to find data, but LookupData returned not found")
+	}
+	if string(data) != string(testData) {
+		t.Errorf("Expected '%s', got '%s'", string(testData), string(data))
+	}
 }
