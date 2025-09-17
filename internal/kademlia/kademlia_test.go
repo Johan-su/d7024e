@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+	"time"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
@@ -210,7 +211,6 @@ func TestLookupDataSingleHop(t *testing.T) {
 	// make node 0 aware of node 1
 	network.nodes[0].routingTable.AddContact(network.nodes[1].routingTable.me)
 
-	// now call LookupData on node 0
 	data, found, _ := network.nodes[0].LookupData(key.String())
 
 	if !found {
@@ -218,5 +218,106 @@ func TestLookupDataSingleHop(t *testing.T) {
 	}
 	if string(data) != string(testData) {
 		t.Errorf("Expected '%s', got '%s'", string(testData), string(data))
+	}
+}
+
+func TestLookupDataMultipleHops(t *testing.T) {
+	network := NewMockNetwork(4, 0)
+	network.AllNodesListen()
+
+	// store test data on node 3
+	testData := []byte("multi-hop data")
+	key := Sha1toKademlia(testData)
+	network.nodes[3].kv_store[*key] = testData
+
+	// set up routing chain
+	network.nodes[0].routingTable.AddContact(network.nodes[1].routingTable.me)
+	network.nodes[1].routingTable.AddContact(network.nodes[2].routingTable.me)
+	network.nodes[2].routingTable.AddContact(network.nodes[3].routingTable.me)
+
+	// lookup data starting from node 0
+	data, found, _ := network.nodes[0].LookupData(key.String())
+
+	if !found {
+		t.Fatalf("Expected to find data through multiple hops, but LookupData returned not found")
+	}
+	if string(data) != string(testData) {
+		t.Errorf("Expected '%s', got '%s'", string(testData), string(data))
+	}
+
+	// check which node that didnt have the data is closest to the target
+	xorDistance := func(a, b *KademliaID) KademliaID {
+		var d KademliaID
+		for i := 0; i < IDLength; i++ {
+			d[i] = a[i] ^ b[i]
+		}
+		return d
+	}
+
+	d1 := xorDistance(network.nodes[1].routingTable.me.ID, key)
+	d2 := xorDistance(network.nodes[2].routingTable.me.ID, key)
+
+	closestNode := &network.nodes[1]
+	if d2.Less(&d1) {
+		closestNode = &network.nodes[2]
+	}
+
+	time.Sleep(10 * time.Millisecond) // Wait for the StoreRPC to be processed
+
+	foundStored := false
+
+	if _, exists := closestNode.kv_store[*key]; exists {
+		foundStored = true
+	}
+
+	if !foundStored {
+		t.Errorf("Expected closest node (%v) to store the data, but it did not", closestNode.routingTable.me.Address)
+	}
+}
+
+func TestLookupDataReturnC(t *testing.T) {
+	network := NewMockNetwork(5, 0)
+	network.AllNodesListen()
+
+	nonexistentKey := NewRandomKademliaID()
+
+	network.nodes[0].routingTable.AddContact(network.nodes[1].routingTable.me)
+	network.nodes[1].routingTable.AddContact(network.nodes[2].routingTable.me)
+	network.nodes[2].routingTable.AddContact(network.nodes[3].routingTable.me)
+	network.nodes[3].routingTable.AddContact(network.nodes[4].routingTable.me)
+
+	for i := 0; i < 5; i++ {
+		if _, exists := network.nodes[i].kv_store[*nonexistentKey]; exists {
+			t.Fatalf("Node %d should not have the data initially", i)
+		}
+	}
+
+	// should return nil, false, [closest contacts]
+	data, found, closestContacts := network.nodes[0].LookupData(nonexistentKey.String())
+
+	if found {
+		t.Fatalf("Expected data not to be found, but it was found: %s", string(data))
+	}
+
+	if data != nil {
+		t.Errorf("Expected nil data when not found, got %v", data)
+	}
+
+	if closestContacts == nil {
+		t.Fatal("Expected closest contacts to be returned when data is not found")
+	}
+
+	if len(closestContacts) == 0 {
+		t.Fatal("Expected non-empty closest contacts list")
+	}
+
+	for i := 0; i < len(closestContacts)-1; i++ {
+		closestContacts[i].CalcDistance(nonexistentKey)
+		closestContacts[i+1].CalcDistance(nonexistentKey)
+
+		if !closestContacts[i].Less(&closestContacts[i+1]) {
+			t.Errorf("Contacts should be sorted by distance. %s should be closer than %s",
+				closestContacts[i].ID, closestContacts[i+1].ID)
+		}
 	}
 }

@@ -323,10 +323,25 @@ func (kademlia *Kademlia) HandleResponse() {
 							find_value_reply.contacts = make([]KademliaTriple, find_value_reply.contact_count)
 							for i := 0; i < int(find_value_reply.contact_count); i += 1 {
 								var tri KademliaTriple
-								PartialRead(reader, &tri)
+
+								err = PartialRead(reader, &tri.id)
 								if err != nil {
 									log.Fatalf("%v\n", err)
 								}
+
+								err = PartialRead(reader, &tri.addr_len)
+								if err != nil {
+									log.Fatalf("%v\n", err)
+								}
+
+								addrBytes := make([]byte, tri.addr_len)
+								n, err := reader.Read(addrBytes)
+								if err != nil || uint64(n) != tri.addr_len {
+									log.Fatalf("failed to read address bytes: %v", err)
+								}
+
+								tri.address = string(addrBytes)
+
 								find_value_reply.contacts[i] = tri
 							}
 						} else {
@@ -334,7 +349,6 @@ func (kademlia *Kademlia) HandleResponse() {
 							reader.Read(find_value_reply.data)
 						}
 					}
-
 					kademlia.BucketUpdate(response.from_address, header.Node_id)
 					kademlia.find_responses <- find_value_reply
 				} else {
@@ -676,7 +690,10 @@ func (kademlia *Kademlia) SendStoreMessage(address string, data []byte) {
 	rpc.data_size = uint64(len(data))
 	rpc.data = data
 
-	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc)
+	write_buf, _ := binary.Append(nil, binary.NativeEndian, rpc.header)
+	write_buf, _ = binary.Append(write_buf, binary.NativeEndian, rpc.data_size)
+	write_buf = append(write_buf, rpc.data...)
+	log.Printf("[%v] Sending STORE to %v, data_size=%d", kademlia.routingTable.me.Address, address, len(data))
 
 	kademlia.net.SendData(address, write_buf)
 }
@@ -778,7 +795,6 @@ func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaI
 	} else {
 		write_buf = append(write_buf, data...)
 	}
-
 	kademlia.net.SendData(address, write_buf)
 }
 
