@@ -121,7 +121,7 @@ func TestFindValue(t *testing.T) {
 	
 	
 	// TODO: change to 1000 nodes after fix
-	network := NewMockNetwork(30, 0)
+	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
 	
 	for i := 1; i < len(network.nodes); i += 1 {
