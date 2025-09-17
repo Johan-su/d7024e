@@ -35,21 +35,24 @@ func main() {
 			}
 		}
 		s := scanner.Text()
-		fmt.Printf("%v\n", s)
 		s = strings.TrimSuffix(s, "\n")
 		s = strings.TrimSuffix(s, "\r")
 
 		strs := strings.Split(s, " ")
-		fmt.Printf("strs: %v\n", strs)
 
 		if strs[0] == "exit" {
 			break
 		} else if strs[0] == "put" {
-			node.Store([]byte(strs[1]))
+			hash, err := node.Store([]byte(strs[1]))
+			if err != nil {
+				fmt.Printf("Failed to store because of %v\n", err)
+			}
+			fmt.Printf("data hash: `%s`\n", hash)
 		} else if strs[0] == "get" {
-			dat, exists := node.LookupData(strs[1])
+			dat, id, exists := node.LookupData(strs[1])
 			if exists {
 				fmt.Printf("data: %s\n", dat)
+				fmt.Printf("id: %s\n", id.String())
 			} else {
 				fmt.Printf("data not found\n")
 			}

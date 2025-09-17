@@ -42,8 +42,7 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		mock_node.network = n
 		mock_node.address = address
 		n.nodes = append(n.nodes, NewKademlia(address, mock_node))
-		// TODO: make channel buffer count global constant
-		n.ip_to_queue[address] = make(chan Message, 4*alpha)
+		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
 	return n
 }
@@ -75,7 +74,7 @@ func (net *MockNetwork) WaitForSettledNetwork() {
 			prev_send_count = send_count
 			prev_receive_count = receive_count
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 	}
 }
 
@@ -126,7 +125,7 @@ func (network *UDPNode) Listen(address string) Message {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
 	}
 	
-	fmt.Printf("listening... at %v\n", address)
+	log.Printf("listening... on %v\n", address)
 	conn, err := net.ListenUDP("udp", addr)
 	if (err != nil) {
 		log.Fatalf("Failed to listen %v\n", err)
