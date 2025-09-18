@@ -45,6 +45,12 @@ func NewRandomKademliaID() *KademliaID {
 	return &newKademliaID
 }
 
+func NewKademliaIDFromBytes(data []byte) *KademliaID {
+	newKademliaID := KademliaID{}
+	copy(newKademliaID[0:IDLength], data[0:IDLength])
+	return &newKademliaID
+}
+
 // Less returns true if kademliaID < otherKademliaID (bitwise)
 func (kademliaID KademliaID) Less(otherKademliaID *KademliaID) bool {
 	for i := 0; i < IDLength; i++ {

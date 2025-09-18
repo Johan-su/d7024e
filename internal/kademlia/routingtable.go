@@ -10,6 +10,7 @@ type RoutingTable struct {
 	buckets [IDLength * 8]*bucket
 }
 
+
 // NewRoutingTable returns a new instance of a RoutingTable
 func NewRoutingTable(me Contact) *RoutingTable {
 	routingTable := &RoutingTable{}
@@ -67,4 +68,19 @@ func (routingTable *RoutingTable) getBucketIndex(id *KademliaID) int {
 	}
 
 	return IDLength*8 - 1
+}
+
+// GetAllContacts returns all contacts in the routing table (excluding self)
+func (routingTable *RoutingTable) GetAllContacts() []Contact {
+	var contacts []Contact
+	for i := 0; i < IDLength*8; i++ {
+		bucket := routingTable.buckets[i]
+		for _, c := range bucket.GetContacts() {
+			// Exclude self
+			if !c.ID.Equals(routingTable.me.ID) {
+				contacts = append(contacts, c)
+			}
+		}
+	}
+	return contacts
 }

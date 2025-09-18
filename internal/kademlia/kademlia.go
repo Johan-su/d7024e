@@ -130,6 +130,20 @@ func NewKademlia(address string, net Node) Kademlia {
 	return k
 }
 
+func NewKademliaFromBytes(address string, net Node, id_bytes []byte) Kademlia {
+	var k Kademlia
+	if len(id_bytes) != IDLength {
+		log.Panicf("Invalid id length %d, expected %d\n", len(id_bytes), IDLength)
+	}
+	id := NewKademliaIDFromBytes(id_bytes)
+	k.routingTable = NewRoutingTable(NewContact(id, address))
+	k.kvStore = make(map[KademliaID]Value) 
+	k.findNodeResponses = make(chan RPCFindReply, 4*alpha)
+	k.findValueResponses = make(chan RPCFindReply, 4*alpha)
+	k.net = net
+	return k
+}
+
 func (kademlia *Kademlia) RemoveIfInReplyList(id KademliaID) bool {
 	kademlia.muReplyList.Lock()
 	defer kademlia.muReplyList.Unlock()

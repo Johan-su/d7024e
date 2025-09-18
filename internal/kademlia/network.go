@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"math/rand"
+	"math"
 )
 
 type Message struct {
@@ -42,6 +43,22 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		mock_node.network = n
 		mock_node.address = address
 		n.nodes = append(n.nodes, NewKademlia(address, mock_node))
+		n.ip_to_queue[address] = make(chan Message, 10*alpha)
+	}
+	return n
+}
+
+func NewMockNetworkFixedIDs(node_count int, packet_loss float32) *MockNetwork {
+	n := new(MockNetwork)
+	n.ip_to_queue = make(map[string]chan Message)
+	n.send_log = make(map[string][]Message)
+	n.receive_log = make(map[string][]Message)
+	for i := 0; i < node_count; i += 1 {
+		address := fmt.Sprintf("%d", i)
+		mock_node := new(MockNode)
+		mock_node.network = n
+		mock_node.address = address
+		n.nodes = append(n.nodes, NewKademliaFromBytes(address, mock_node, []byte(fmt.Sprintf("%020x", math.Pow(float64(i), 2)))))
 		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
 	return n

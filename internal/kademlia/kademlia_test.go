@@ -197,14 +197,23 @@ func TestFindValue(t *testing.T) {
 
 func TestJoin(t *testing.T) {
 	//TODO maybe make mock network have a local seed
-	network := NewMockNetwork(100, 0)
+	network := NewMockNetworkFixedIDs(10, 0)
 	network.AllNodesListen()
 
 	for i := 1; i < len(network.nodes); i += 1 {
 		network.nodes[i].Join(network.nodes[0].routingTable.me)
 	}
 	network.WaitForSettledNetwork()
-	// TODO maybe check if it actually works
+
+
+	// Check that each node knows about all other nodes. Not actually the case in Kademlia
+	for i, node := range network.nodes {
+		contacts := node.routingTable.GetAllContacts()
+		if len(contacts) < len(network.nodes)-1 {
+			t.Errorf("Node %d: expected at least %d contacts, got %d", i, len(network.nodes)-1, len(contacts))
+		}
+        
+    }
 }
 
 

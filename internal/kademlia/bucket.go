@@ -1,3 +1,4 @@
+
 package kademlia
 
 import (
@@ -9,6 +10,7 @@ import (
 type bucket struct {
 	list *list.List
 }
+
 
 // newBucket returns a new instance of a bucket
 func newBucket() *bucket {
@@ -64,4 +66,14 @@ func (bucket *bucket) GetContactAndCalcDistance(target *KademliaID) []Contact {
 // Len return the size of the bucket
 func (bucket *bucket) Len() int {
 	return bucket.list.Len()
+}
+
+// GetContacts returns all contacts in the bucket as a slice
+func (bucket *bucket) GetContacts() []Contact {
+	var contacts []Contact
+	for elt := bucket.list.Front(); elt != nil; elt = elt.Next() {
+		contact := elt.Value.(Contact)
+		contacts = append(contacts, contact)
+	}
+	return contacts
 }
