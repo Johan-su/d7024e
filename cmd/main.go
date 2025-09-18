@@ -49,10 +49,10 @@ func main() {
 			}
 			fmt.Printf("data hash: `%s`\n", hash)
 		} else if strs[0] == "get" {
-			dat, id, exists := node.LookupData(strs[1])
+			dat, exists, contacts := node.LookupData(strs[1])
 			if exists {
 				fmt.Printf("data: %s\n", dat)
-				fmt.Printf("id: %s\n", id.String())
+				fmt.Printf("id: %s\n", contacts[0].ID.String())
 			} else {
 				fmt.Printf("data not found\n")
 			}

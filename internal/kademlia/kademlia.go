@@ -436,6 +436,8 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool, []Contact) {
 	var foundData []byte
 	var nodesWithoutData []Contact // track nodes that didnt have the data
 
+	fromNode := make([]Contact, 1)
+
 	unchangedRounds := 0
 	dataFound := false
 
@@ -459,6 +461,7 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool, []Contact) {
 			if len(response.data) > 0 && !dataFound {
 				foundData = response.data
 				dataFound = true
+				fromNode[0] = toQuery[i]
 			} else {
 				nodesWithoutData = append(nodesWithoutData, toQuery[i])
 			}
@@ -494,7 +497,7 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool, []Contact) {
 	}
 
 	if dataFound {
-		return foundData, true, nil
+		return foundData, true, fromNode
 	} else {
 		return nil, false, getTopContacts(shortlist, bucketSize)
 	}
