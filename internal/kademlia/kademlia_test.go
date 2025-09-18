@@ -3,7 +3,6 @@ package kademlia
 import (
 	"bytes"
 	"testing"
-	// "fmt"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
@@ -118,10 +117,9 @@ func TestFindContact(t *testing.T) {
 }
 
 func TestFindValue(t *testing.T) {
-	
-	
-	// TODO: change to 1000 nodes after fix
-	network := NewMockNetwork(20, 0)
+	// rand.Seed(0)
+
+	network := NewMockNetwork(1000, 0)
 	network.AllNodesListen()
 	
 	for i := 1; i < len(network.nodes); i += 1 {
@@ -144,8 +142,7 @@ func TestFindValue(t *testing.T) {
 	network.WaitForSettledNetwork()
 
 
-
-	dat, _, exists := network.nodes[5].LookupData(storedHash.String())
+	dat, exists, _ := network.nodes[5].LookupData(storedHash.String())
 
 	if !exists {
 		t.Errorf("Expected %v got %v\n", true, exists)
@@ -154,45 +151,6 @@ func TestFindValue(t *testing.T) {
 	if !bytes.Equal(dat, data) {
 		t.Errorf("Expected %v got %v\n", data, dat)
 	}	
-
-
-	// ExpectSend(t, network, "1", RPCTypeFindValue)
-	// ExpectSend(t, network, "0", RPCTypeFindValue)
-
-	// ExpectReceive(t, network, "2", "1", RPCTypeFindValue)
-	// ExpectReceive(t, network, "3", "0", RPCTypeFindValue)
-
-	// ExpectSend(t, network, "2", RPCTypeFindValueReply)
-	// ExpectSend(t, network, "3", RPCTypeFindValueReply)
-
-	// ExpectReceive(t, network, "1", "2", RPCTypeFindValueReply)
-	// ExpectReceive(t, network, "0", "3", RPCTypeFindValueReply)
-	
-	
-	// if len(network.nodes[1].find_responses) != 1 {
-	// 	t.Fatalf("Expected response")
-	// }
-
-	// if len(network.nodes[0].find_responses) != 1 {
-	// 	t.Fatalf("Expected response")
-	// }
-
-
-	// v1 := <- network.nodes[1].find_responses
-	// v2 := <- network.nodes[0].find_responses
-
-
-	// if v1.contact_count == 0 && v1.data_size != uint64(v1.contact_count) {
-	// 	t.Fatalf("Expected response to return contacts")
-	// }
-	
-	// if v2.data_size == 0 && v2.data_size != uint64(v2.contact_count) {
-	// 	t.Fatalf("Expected response to return data")
-	// }
-
-	// if !bytes.Equal(v2.data, data) {
-	// 	t.Errorf("Expected %v got %v", data, v2.data)
-	// }
 }
 
 func TestJoin(t *testing.T) {

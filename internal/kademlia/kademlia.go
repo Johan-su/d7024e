@@ -246,11 +246,19 @@ func (kademlia *Kademlia) HandleResponse() {
 				kademlia.BucketUpdate(response.from_address, header.NodeId)
 				var find_value RPCFindValue
 				
+				{
+					find_value.header = header
+					err := PartialRead(reader, &find_value.targetKeyId)
+					assertPanic(err == nil, "%v\n", err)
+				}
+
 				var bytes []byte
 				var contacts []Contact
-
-				bytes, _, ok := kademlia.LookupData(find_value.targetKeyId.String())
-				if !ok {
+				
+				val := kademlia.kvStore[find_value.targetKeyId]
+				if val.exists {
+					bytes = val.dat
+				} else {
 					contacts = kademlia.routingTable.FindClosestContacts(&find_value.targetKeyId, bucketSize)
 				}
 				kademlia.SendFindDataReplyMessage(response.from_address, &header.RpcId, bytes, contacts)
@@ -324,21 +332,31 @@ func (kademlia *Kademlia) HandleResponse() {
 					{
 						find_value_reply.header = header
 						err = PartialRead(reader, &find_value_reply.dataSize)
-						if err != nil {
-							log.Fatalf("%v\n", err)
-						}
+						assertPanic(err == nil, "%v\n", err)
+
+						err = PartialRead(reader, &find_value_reply.contactCount)
+						assertPanic(err == nil, "%v\n", err)
+
 						if find_value_reply.dataSize == 0 {
-							err = PartialRead(reader, &find_value_reply.contactCount)
-							if err != nil {
-								log.Fatalf("%v\n", err)
-							}
+
 							find_value_reply.contacts = make([]KademliaTriple, find_value_reply.contactCount)
 							for i := 0; i < int(find_value_reply.contactCount); i += 1 {
 								var tri KademliaTriple
-								PartialRead(reader, &tri)
+								PartialRead(reader, &tri.id)
 								if err != nil {
 									log.Fatalf("%v\n", err)
 								}
+								PartialRead(reader, &tri.addrLen)
+								if err != nil {
+									log.Fatalf("%v\n", err)
+								}
+								b := make([]byte, tri.addrLen)
+								err = binary.Read(reader, binary.NativeEndian, &b)
+								if err != nil {
+									log.Fatalf("%v\n", err)
+								}
+								tri.address = string(b)
+
 								find_value_reply.contacts[i] = tri
 							}
 						} else {
@@ -407,31 +425,25 @@ func (kademlia *Kademlia) Join(bootstrapContact Contact) {
 	}
 }
 
-func (kademlia *Kademlia) LookupData(hash string) ([]byte, KademliaID, bool) {
 
-	target := NewKademliaID(hash)
-	val := kademlia.kvStore[*target]
-	if val.exists {
-		return val.dat, *kademlia.routingTable.me.ID, true
-	} 
-	// "The first alpha contacts selected are used to create a shortlist for the search."
-	initalCandidates := kademlia.routingTable.FindClosestContacts(target, alpha)
-	if len(initalCandidates) == 0 {
-		return nil, KademliaID{}, false
-	}
-	shortlist := make([]Contact, len(initalCandidates))
-	copy(shortlist, initalCandidates)
+func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool, []Contact) {
+	key := NewKademliaID(hash)
+	shortlist := kademlia.routingTable.FindClosestContacts(key, alpha)
+	sortByDistance(shortlist, key)
 
-	sortByDistance(shortlist, target)
-	queried := make(map[string]bool)
+	queried := make(map[string]Contact)
+
+	var foundData []byte
+	var nodesWithoutData []Contact // track nodes that didnt have the data
 
 	unchangedRounds := 0
+	dataFound := false
 
-	for unchangedRounds < 3 {
-		toQuery := selectUnqueriedNodes(shortlist, queried, alpha) // helper to select nodes that hasnt been queried already
+	for unchangedRounds < 3 && foundData == nil {
+		toQuery := selectUnqueriedNodes(shortlist, queried, alpha)
 
-		for _, contact := range toQuery {
-			queried[contact.ID.String()] = true
+		for _, c := range toQuery {
+			queried[c.ID.String()] = c
 		}
 
 		oldClosest := shortlist[0]
@@ -440,34 +452,64 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, KademliaID, bool) {
 			break
 		}
 
-		contacts, data, foundId, foundData := kademlia.queryFindNodes(toQuery, *target)
-		if foundData {
-			return data, foundId, foundData
+		responses := kademlia.queryDataNodes(toQuery, *key)
+
+		// check if value is found
+		for i, response := range responses {
+			if len(response.data) > 0 && !dataFound {
+				foundData = response.data
+				dataFound = true
+			} else {
+				nodesWithoutData = append(nodesWithoutData, toQuery[i])
+			}
+			// if the data wasnt found, merge the found contacts (just like lookupContact)
+			if !dataFound && response.contacts != nil {
+				var newContacts []Contact
+				for _, triple := range response.contacts {
+					newContacts = append(newContacts, Contact{&triple.id, triple.address, nil})
+				}
+				shortlist = mergeAndSort(shortlist, newContacts, key)
+			}
 		}
-		shortlist = mergeAndSort(shortlist, contacts, target)
+
+		if dataFound {
+			break
+		}
 
 		if shortlist[0].ID.Equals(oldClosest.ID) {
 			unchangedRounds++
 		} else {
 			unchangedRounds = 0
 		}
-
 	}
-	return nil, KademliaID{}, false
+
+	// store to closest not without the data
+	if dataFound && len(nodesWithoutData) > 0 {
+		for i := range nodesWithoutData {
+			nodesWithoutData[i].CalcDistance(key)
+		}
+		sortByDistance(nodesWithoutData, key)
+		closestNode := nodesWithoutData[0]
+		kademlia.SendStoreMessage(closestNode.Address, foundData)
+	}
+
+	if dataFound {
+		return foundData, true, nil
+	} else {
+		return nil, false, getTopContacts(shortlist, bucketSize)
+	}
 }
 
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 
 	// "The first alpha contacts selected are used to create a shortlist for the search."
-	initalCandidates := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
-	if len(initalCandidates) == 0 {
+	shortlist := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
+	if len(shortlist) == 0 {
 		return nil
 	}
-	shortlist := make([]Contact, len(initalCandidates))
-	copy(shortlist, initalCandidates)
 
 	sortByDistance(shortlist, target.ID)
-	queried := make(map[string]bool)
+	queried := make(map[string]Contact)
 
 	unchangedRounds := 0
 
@@ -475,7 +517,7 @@ func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 		toQuery := selectUnqueriedNodes(shortlist, queried, alpha) // helper to select nodes that hasnt been queried already
 
 		for _, contact := range toQuery {
-			queried[contact.ID.String()] = true
+			queried[contact.ID.String()] = contact
 		}
 
 		oldClosest := shortlist[0]
@@ -515,6 +557,26 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 	}
 
 	return *key, nil
+}
+
+func (kademlia *Kademlia) queryDataNodes(contactsToQuery []Contact, targetHash KademliaID) []RPCFindReply {
+	length := len(contactsToQuery)
+	if length > alpha {
+		panic("illegal")
+	}
+
+	var responses []RPCFindReply
+
+	for i := 0; i < length; i++ {
+		go kademlia.SendFindDataMessage(contactsToQuery[i].Address, targetHash)
+	}
+
+	for i := 0; i < length; i++ {
+		response := <- kademlia.findValueResponses
+		responses = append(responses, response)
+	}
+
+	return responses
 }
 
 func (kademlia *Kademlia) queryFindNodes(contactsToQuery []Contact, targetHash KademliaID) ([]Contact, []byte, KademliaID, bool) {
@@ -572,10 +634,20 @@ func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *Kademl
 	return responses
 }
 
-func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) []Contact {
-var result []Contact
+// func selectUnqueriedNodes(shortlist []Contact, queried map[string]bool, n int) []Contact {
+// var result []Contact
+// 	for _, contact := range shortlist {
+// 		if !queried[contact.ID.String()] && len(result) < n {
+// 			result = append(result, contact)
+// 		}
+// 	}
+// 	return result
+// }
+
+func selectUnqueriedNodes(shortlist []Contact, queried map[string]Contact, n int) []Contact {
+	var result []Contact
 	for _, contact := range shortlist {
-		if !queried[contact.ID.String()] && len(result) < n {
+		if _, alreadyQueried := queried[contact.ID.String()]; !alreadyQueried && len(result) < n {
 			result = append(result, contact)
 		}
 	}
