@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
 	// "fmt"
 )
@@ -118,10 +119,10 @@ func TestFindContact(t *testing.T) {
 }
 
 func TestFindValue(t *testing.T) {
-	
-	
+	rand.Seed(0)
+
 	// TODO: change to 1000 nodes after fix
-	network := NewMockNetwork(20, 0)
+	network := NewMockNetwork(120, 0)
 	network.AllNodesListen()
 	
 	for i := 1; i < len(network.nodes); i += 1 {

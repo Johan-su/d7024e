@@ -246,8 +246,15 @@ func (kademlia *Kademlia) HandleResponse() {
 				kademlia.BucketUpdate(response.from_address, header.NodeId)
 				var find_value RPCFindValue
 				
+				{
+					find_value.header = header
+					err := PartialRead(reader, &find_value.targetKeyId)
+					assertPanic(err == nil, "%v\n", err)
+				}
+
 				var bytes []byte
 				var contacts []Contact
+				
 
 				bytes, _, ok := kademlia.LookupData(find_value.targetKeyId.String())
 				if !ok {
@@ -415,12 +422,10 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, KademliaID, bool) {
 		return val.dat, *kademlia.routingTable.me.ID, true
 	} 
 	// "The first alpha contacts selected are used to create a shortlist for the search."
-	initalCandidates := kademlia.routingTable.FindClosestContacts(target, alpha)
-	if len(initalCandidates) == 0 {
+	shortlist := kademlia.routingTable.FindClosestContacts(target, alpha)
+	if len(shortlist) == 0 {
 		return nil, KademliaID{}, false
 	}
-	shortlist := make([]Contact, len(initalCandidates))
-	copy(shortlist, initalCandidates)
 
 	sortByDistance(shortlist, target)
 	queried := make(map[string]bool)
@@ -459,12 +464,10 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, KademliaID, bool) {
 func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 
 	// "The first alpha contacts selected are used to create a shortlist for the search."
-	initalCandidates := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
-	if len(initalCandidates) == 0 {
+	shortlist := kademlia.routingTable.FindClosestContacts(target.ID, alpha)
+	if len(shortlist) == 0 {
 		return nil
 	}
-	shortlist := make([]Contact, len(initalCandidates))
-	copy(shortlist, initalCandidates)
 
 	sortByDistance(shortlist, target.ID)
 	queried := make(map[string]bool)
