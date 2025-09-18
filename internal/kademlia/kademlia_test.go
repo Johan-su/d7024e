@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
 )
 
