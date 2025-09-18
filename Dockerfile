@@ -15,4 +15,4 @@ FROM alpine:latest
 COPY bin/kademlia_linux.exe .
 RUN mv kademlia_linux.exe kademlia
 
-ENTRYPOINT ["./kademlia"] 
+ENTRYPOINT ["./kademlia", "-bip", "10.0.1.3", "-bid", "a353be5db2fcadc14b71b0ca900546c62f0edd9b"] 

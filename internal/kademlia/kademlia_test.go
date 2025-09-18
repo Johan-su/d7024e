@@ -2,7 +2,7 @@ package kademlia
 
 import (
 	"bytes"
-	// "math/rand"
+	"math/rand"
 	"testing"
 )
 
@@ -65,13 +65,13 @@ func TestPing(t *testing.T) {
 	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
 	
-	network.nodes[0].SendPingMessage("19", false)
-	network.nodes[4].SendPingMessage("15", false)
-	network.nodes[5].SendPingMessage("15", false)
-	network.nodes[6].SendPingMessage("15", false)
-	network.nodes[7].SendPingMessage("15", false)
+	network.nodes[0].SendPingMessage(*NewRandomKademliaID(), "19", false)
+	network.nodes[4].SendPingMessage(*NewRandomKademliaID(), "15", false)
+	network.nodes[5].SendPingMessage(*NewRandomKademliaID(), "15", false)
+	network.nodes[6].SendPingMessage(*NewRandomKademliaID(), "15", false)
+	network.nodes[7].SendPingMessage(*NewRandomKademliaID(), "15", false)
 
-	network.nodes[15].SendPingMessage("4", false)
+	network.nodes[15].SendPingMessage(*NewRandomKademliaID(), "4", false)
 
 	network.WaitForSettledNetwork()
 
@@ -101,7 +101,8 @@ func TestFindContact(t *testing.T) {
 	c := network.nodes[2].routingTable.me
 
 	network.nodes[1].routingTable.AddContact(c)
-	network.nodes[0].SendFindContactMessage("1", c.ID)
+	rpcId := *NewRandomKademliaID()
+	network.nodes[0].SendFindContactMessage(rpcId, "1", c.ID)
 
 
 	network.WaitForSettledNetwork()
@@ -110,15 +111,17 @@ func TestFindContact(t *testing.T) {
 	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
 	
-
-	val := <- network.nodes[0].findNodeResponses
+	val, foundData := network.nodes[0].GetAndRemoveFindNodeReponse(rpcId)
+	if !foundData {
+		t.Fail()
+	}
 	if !val.contacts[0].id.Equals(c.ID) {
 		t.Errorf("Expected %v got %v", c.ID, &val.contacts[0].id)
 	}
 }
 
 func TestFindValue(t *testing.T) {
-	// rand.Seed(0)
+	rand.Seed(0)
 
 	network := NewMockNetwork(1000, 0)
 	network.AllNodesListen()
@@ -143,7 +146,7 @@ func TestFindValue(t *testing.T) {
 	network.WaitForSettledNetwork()
 
 
-	dat, exists, _ := network.nodes[5].LookupData(storedHash.String())
+	dat, exists, _ := network.nodes[1].LookupData(storedHash.String())
 
 	if !exists {
 		t.Errorf("Expected %v got %v\n", true, exists)

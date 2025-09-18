@@ -41,7 +41,7 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		mock_node := new(MockNode)
 		mock_node.network = n
 		mock_node.address = address
-		n.nodes = append(n.nodes, NewKademlia(address, mock_node))
+		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node))
 		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
 	return n
@@ -106,7 +106,12 @@ func (node *MockNode) SendData(address string, data []byte) {
 	node.network.send_log[node.address] = append(node.network.send_log[node.address], dat)
 	node.network.mu.Unlock()
 	if node.network.packet_loss < rand.Float32() {
-		channel <- dat 
+		select {
+			case channel <- dat:
+			case <-time.After(3 * time.Second): {
+				log.Fatalf("Mock SendData Timedout\n")
+			} 
+		}
 	}
 }
 
@@ -125,7 +130,7 @@ func (network *UDPNode) Listen(address string) Message {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
 	}
 	
-	log.Printf("listening... on %v\n", address)
+	// log.Printf("listening... on %v\n", address)
 	conn, err := net.ListenUDP("udp", addr)
 	if (err != nil) {
 		log.Fatalf("Failed to listen %v\n", err)
@@ -138,7 +143,8 @@ func (network *UDPNode) Listen(address string) Message {
 	}
 
 	conn.Close()
-	return Message{rec_addr.String(), buf}
+	// TODO: maybe change to something less jank than concatenating the port
+	return Message{rec_addr.IP.String()+":8000", buf}
 }
 	
 func (network *UDPNode) SendData(address string, data []byte) {
@@ -146,10 +152,12 @@ func (network *UDPNode) SendData(address string, data []byte) {
 	if err != nil {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
 	}
+
 	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		log.Fatalf("Failed to send data, %v\n", err)
 	}
+
 	defer conn.Close()
 	_, err = conn.Write(data)
 	if err != nil {
