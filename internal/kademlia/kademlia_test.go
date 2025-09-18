@@ -120,7 +120,7 @@ func TestFindContact(t *testing.T) {
 func TestFindValue(t *testing.T) {
 	// rand.Seed(0)
 
-	network := NewMockNetwork(1001, 0)
+	network := NewMockNetwork(1000, 0)
 	network.AllNodesListen()
 	
 	for i := 1; i < len(network.nodes); i += 1 {
