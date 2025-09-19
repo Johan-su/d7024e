@@ -274,7 +274,6 @@ func (kademlia *Kademlia) HandleResponse() {
 
 	requests := make(chan Message, 100)
 
-	//TODO: only works with 1 worker for now
 	for i := 0; i < 2; i += 1 {
 		go kademlia.worker(requests)
 	}
