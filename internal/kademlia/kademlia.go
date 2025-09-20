@@ -274,7 +274,7 @@ func (kademlia *Kademlia) HandleResponse() {
 
 	requests := make(chan Message, 100)
 
-	for i := 0; i < 2; i += 1 {
+	for i := 0; i < 3; i += 1 {
 		go kademlia.worker(requests)
 	}
 
@@ -683,7 +683,7 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 	}
 
 	for _, c := range closestContacts {
-		go kademlia.SendStoreMessage(*NewRandomKademliaID(), c.Address, data)
+		kademlia.SendStoreMessage(*NewRandomKademliaID(), c.Address, data)
 	}
 
 	return *key, nil
@@ -697,7 +697,7 @@ func (kademlia *Kademlia) queryDataNodes(contactsToQuery []Contact, targetHash K
 	rpcIds := make([]KademliaID, length)
 	for i := 0; i < length; i++ {
 		rpcIds[i] = *NewRandomKademliaID()
-		go kademlia.SendFindDataMessage(rpcIds[i], contactsToQuery[i].Address, targetHash)
+		kademlia.SendFindDataMessage(rpcIds[i], contactsToQuery[i].Address, targetHash)
 	}
 
 	for _, id := range rpcIds {
@@ -722,7 +722,7 @@ func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *Kademl
 	// strict parallelism
 	for i := 0; i < length; i += 1 {
 		rpcIds[i] = *NewRandomKademliaID()
-		go kademlia.SendFindContactMessage(rpcIds[i], contactsToQuery[i].Address, targetID)
+		kademlia.SendFindContactMessage(rpcIds[i], contactsToQuery[i].Address, targetID)
 	}
 
 	for  _, id := range rpcIds {
