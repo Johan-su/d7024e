@@ -3,10 +3,10 @@ package kademlia
 import (
 	"testing"
 	//"fmt"
-	"strconv" 
-	"time"
 	"bytes"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func TestMockNetwork(t *testing.T) {
@@ -35,7 +35,7 @@ func TestMockNetwork(t *testing.T) {
 	       if err != nil {
 		       t.Fatalf("Invalid from_address: %v", msg.from_address)
 	       }
-	       network.nodes[idx].net.SendData(msg.address, msg.data)
+	       network.nodes[idx].Net.SendData(msg.address, msg.data)
        }
 
 

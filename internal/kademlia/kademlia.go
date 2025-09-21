@@ -125,7 +125,7 @@ type Kademlia struct {
 	muFindValueResponses sync.Mutex
 	findValueResponses map[KademliaID]chan RPCFindReply
 
-	net Node
+	Net Node
 }
 
 func NewKademlia(address string, id *KademliaID, net Node) Kademlia {
@@ -135,7 +135,7 @@ func NewKademlia(address string, id *KademliaID, net Node) Kademlia {
 	k.replyResponses = make(map[KademliaID]Reply)
 	k.findNodeResponses = make(map[KademliaID]chan RPCFindReply)
 	k.findValueResponses = make(map[KademliaID]chan RPCFindReply)
-	k.net = net
+	k.Net = net
 	return k
 }
 
@@ -269,6 +269,11 @@ func (kademlia *Kademlia) BucketUpdate(address string, node_id KademliaID) {
 	}
 }
 
+func (kademlia *Kademlia) Listen() {
+	meaddr := kademlia.routingTable.me.Address
+	kademlia.Net.Listen(meaddr)
+}
+
 func (kademlia *Kademlia) HandleResponse() {
 	meaddr := kademlia.routingTable.me.Address
 
@@ -279,7 +284,7 @@ func (kademlia *Kademlia) HandleResponse() {
 	}
 
 	for {
-		response := kademlia.net.Listen(meaddr)
+		response := kademlia.Net.Receive()
 		select {
 			case requests <- response:
 			default: {
@@ -804,7 +809,7 @@ func (kademlia *Kademlia) SendPingMessage(rpcId KademliaID, address string, remo
 	writeBuf, err := binary.Append(nil, binary.NativeEndian, rpc)
 	assertPanic(err == nil, "%v\n", err)
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendFindContactMessage(rpcId KademliaID, address string, key *KademliaID) {
@@ -824,7 +829,7 @@ func (kademlia *Kademlia) SendFindContactMessage(rpcId KademliaID, address strin
 	assertPanic(err == nil, "%v\n", err)
 
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendFindDataMessage(rpcId KademliaID, address string, targetKey KademliaID) {
@@ -843,7 +848,7 @@ func (kademlia *Kademlia) SendFindDataMessage(rpcId KademliaID, address string, 
 	assertPanic(err == nil, "%v\n", err)
 
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, data []byte) {
@@ -872,7 +877,7 @@ func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, dat
 
 	writeBuf = append(writeBuf, rpc.data...)
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendPingReplyMessage(address string, id *KademliaID) {
@@ -886,7 +891,7 @@ func (kademlia *Kademlia) SendPingReplyMessage(address string, id *KademliaID) {
 	writeBuf, err := binary.Append(nil, binary.NativeEndian, rpc)
 	assertPanic(err == nil, "%v\n", err)
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *KademliaID, contacts []Contact) {
@@ -923,7 +928,7 @@ func (kademlia *Kademlia) SendFindContactReplyMessage(address string, id *Kademl
 
 		writeBuf = append(writeBuf, []byte(c.address)...)
 	}
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaID, data []byte, contacts []Contact) {
@@ -974,7 +979,7 @@ func (kademlia *Kademlia) SendFindDataReplyMessage(address string, id *KademliaI
 	}
 
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }
 
 func (kademlia *Kademlia) SendStoreReplyMessage(address string, id *KademliaID, rpcErr RPCError) {
@@ -992,5 +997,5 @@ func (kademlia *Kademlia) SendStoreReplyMessage(address string, id *KademliaID, 
 	writeBuf, err = binary.Append(writeBuf, binary.NativeEndian, rpc)
 	assertPanic(err == nil, "%v\n", err)
 
-	kademlia.net.SendData(address, writeBuf)
+	kademlia.Net.SendData(address, writeBuf)
 }

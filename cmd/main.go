@@ -47,6 +47,7 @@ func main() {
 	fmt.Printf("Kademlia Node Address %v ID %s\n", addr.String(), id.String())
 
 	node := kademlia.NewKademlia(addr.String(), id, kademlia.NewUDPNode())
+	node.Listen()
 	go node.HandleResponse()
 
 
@@ -78,6 +79,7 @@ func main() {
 		strs := strings.Split(s, " ")
 
 		if strs[0] == "exit" {
+			node.Net.Close()
 			break
 		} else if strs[0] == "put" {
 			go func(dat []byte) {
@@ -90,6 +92,10 @@ func main() {
 			}([]byte(strs[1]))
 		} else if strs[0] == "get" {
 			go func(hash string) {
+				if len(hash) != 40 {
+					fmt.Printf("Hash has to be 20 bytes (40 hex characters) long\n")
+					return
+				}
 				dat, exists, contacts := node.LookupData(hash)
 				if exists {
 					fmt.Printf("data: %s\n", dat)

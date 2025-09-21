@@ -15,7 +15,9 @@ type Message struct {
 }
 
 type Node interface {
-	Listen(address string) Message
+	Listen(address string)
+	Close()
+	Receive() Message
 	SendData(address string, data []byte)
 }
 
@@ -40,7 +42,6 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		address := fmt.Sprintf("%d", i)
 		mock_node := new(MockNode)
 		mock_node.network = n
-		mock_node.address = address
 		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node))
 		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
@@ -49,6 +50,7 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 
 func (network *MockNetwork) AllNodesListen() {
 	for i := range network.nodes {
+		network.nodes[i].Listen()
 		go network.nodes[i].HandleResponse()
 	}
 }
@@ -84,19 +86,28 @@ type MockNode struct {
 }
 
 
-func (node *MockNode) Listen(address string) Message {
+func (node *MockNode) Listen(address string) {
+	node.address = address
+}
+
+func (node *MockNode) Close() {
+}
+
+func (node *MockNode) Receive() Message {
+	assertPanic(node.address != "", "address cannot be empty")
 
 	node.network.mu.Lock()
-	channel := node.network.ip_to_queue[address]
+	channel := node.network.ip_to_queue[node.address]
 	node.network.mu.Unlock()
 	rep := <- channel
 	node.network.mu.Lock()
-	node.network.receive_log[address] = append(node.network.receive_log[address], rep)
+	node.network.receive_log[node.address] = append(node.network.receive_log[node.address], rep)
 	node.network.mu.Unlock()
 	return rep
 }
 	
 func (node *MockNode) SendData(address string, data []byte) {
+	assertPanic(address != "", "address cannot be empty")
 	node.network.mu.Lock()
 	channel := node.network.ip_to_queue[address]
 	node.network.mu.Unlock()
@@ -116,6 +127,7 @@ func (node *MockNode) SendData(address string, data []byte) {
 }
 
 type UDPNode struct {
+	conn *net.UDPConn
 }
 
 func NewUDPNode() Node {
@@ -124,7 +136,7 @@ func NewUDPNode() Node {
 	return net
 }
 
-func (network *UDPNode) Listen(address string) Message {
+func (network *UDPNode) Listen(address string) {
 	addr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
@@ -135,31 +147,29 @@ func (network *UDPNode) Listen(address string) Message {
 	if (err != nil) {
 		log.Fatalf("Failed to listen %v\n", err)
 	}
+	network.conn = conn
+}
+
+func (node *UDPNode) Close() {
+	node.conn.Close()
+}
+
+func (node *UDPNode) Receive() Message {
 	buf := make([]byte, 1000)
-	
-	_, rec_addr, err := conn.ReadFromUDP(buf)
+	_, rec_addr, err := node.conn.ReadFromUDP(buf)
 	if err != nil {
 		log.Fatalf("Failed to read packet %v\n", err)
 	}
-
-	conn.Close()
-	// TODO: maybe change to something less jank than concatenating the port
-	return Message{rec_addr.IP.String()+":8000", buf}
+	return Message{rec_addr.String(), buf}
 }
-	
+
 func (network *UDPNode) SendData(address string, data []byte) {
 	addr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		log.Fatalf("Invalid UDP/IP address, %v\n", err)
 	}
 
-	conn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		log.Fatalf("Failed to send data, %v\n", err)
-	}
-
-	defer conn.Close()
-	_, err = conn.Write(data)
+	_, err = network.conn.WriteToUDP(data, addr)
 	if err != nil {
 		log.Fatalf("write error %v\n", err)
 	}
