@@ -5,14 +5,70 @@ package main
 import (
 	"bufio"
 	"d7024e/internal/kademlia"
+	"flag"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
-	"flag"
 )
+
+type objectHandler struct {
+	node *kademlia.Kademlia
+}
+
+func (oh *objectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	scanner := bufio.NewScanner(request.Body)
+	switch request.Method {
+		case "POST": {
+			if !scanner.Scan() {
+				err := scanner.Err()
+				if err != nil {
+					log.Fatalf("%v\n", err)
+				}
+			}
+			dat := scanner.Bytes()
+			hash, err := oh.node.Store(dat)
+			if err != nil {
+				log.Printf("Failed to store because of %v\n", err)
+			} else {
+				writer.WriteHeader(201)
+				writer.Header().Add("Location", fmt.Sprintf("/objects/%v", hash.String()))
+				writer.Write([]byte(""))
+			}
+		}
+		case "GET": {
+			dat := make([]byte, 255)
+			_, err := request.Body.Read(dat)
+			if err != nil {
+				log.Printf("%v\n", err)
+				return
+			}
+			dat, exists, _  := oh.node.LookupData(string(dat))
+			if exists {
+				writer.WriteHeader(200)
+				writer.Write(dat)
+			} else {
+				writer.WriteHeader(404)
+				writer.Write([]byte(""))
+			}
+		}
+	}
+}
+
+func HttpApi(node *kademlia.Kademlia) {
+
+	oh := new(objectHandler)
+	oh.node = node
+	http.Handle("/objects", oh)
+
+	err := http.ListenAndServe("localhost:80", nil)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+}
 
 func main() {
 	hostname, err := os.Hostname()
@@ -28,6 +84,8 @@ func main() {
 	bootId := flag.String("bid", "0000000000000000000000000000000000000000", "Boot Node ID")
 
 	flag.Parse()
+
+
 
 	var isBootNode bool
 
@@ -62,6 +120,7 @@ func main() {
 
 
 
+	go HttpApi(&node)
 	// fmt.Printf("begin scan\n")
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
