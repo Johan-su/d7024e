@@ -104,11 +104,14 @@ type Reply struct {
 type Value struct {
 	dat []byte
 	exists bool
+	expiry time.Time // time when the value expires
 }
 
 type Kademlia struct {
 	muRoutingTable sync.Mutex
 	routingTable *RoutingTable
+
+	TTL time.Duration
 
 	muKvStore sync.Mutex
 	kvStore map[KademliaID]Value
@@ -136,6 +139,7 @@ func NewKademlia(address string, id *KademliaID, net Node) Kademlia {
 	k.findNodeResponses = make(map[KademliaID]chan RPCFindReply)
 	k.findValueResponses = make(map[KademliaID]chan RPCFindReply)
 	k.Net = net
+	k.TTL = 10 * 60 * time.Second
 	return k
 }
 
@@ -334,7 +338,7 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 				
 				key := Sha1toKademlia(store.data)
 				kademlia.muKvStore.Lock()
-				kademlia.kvStore[*key] = Value{store.data, true}
+				kademlia.kvStore[*key] = Value{store.data, true, time.Now().Add(kademlia.TTL)}
 				kademlia.muKvStore.Unlock()
 				// TODO maybe send back a error if it failed to store
 				kademlia.SendStoreReplyMessage(response.from_address, &header.RpcId, RPCErrorNoError)
@@ -372,7 +376,7 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 				kademlia.muKvStore.Lock()
 				val := kademlia.kvStore[find_value.targetKeyId]
 				kademlia.muKvStore.Unlock()
-				if val.exists {
+				if val.exists && time.Now().Before(val.expiry) {
 					bytes = val.dat
 				} else {
 					kademlia.muRoutingTable.Lock()
@@ -677,7 +681,7 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 	key := Sha1toKademlia(data)
 
 	kademlia.muKvStore.Lock()
-	kademlia.kvStore[*key] = Value{data, true}
+	kademlia.kvStore[*key] = Value{data, true, time.Now().Add(kademlia.TTL)}
 	kademlia.muKvStore.Unlock()
 
 	target := NewContact(key, "")
