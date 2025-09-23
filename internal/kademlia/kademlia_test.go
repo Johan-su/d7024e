@@ -8,8 +8,8 @@ import (
 
 func RemoveUnordered[T any](arr []T, index int) []T {
 	len := len(arr)
-	arr[index] = arr[len - 1]
-	arr = arr[:len - 1]
+	arr[index] = arr[len-1]
+	arr = arr[:len-1]
 	return arr
 }
 
@@ -64,7 +64,7 @@ func TestPing(t *testing.T) {
 
 	network := NewMockNetwork(20, 0)
 	network.AllNodesListen()
-	
+
 	network.nodes[0].SendPingMessage(*NewRandomKademliaID(), "19", false)
 	network.nodes[4].SendPingMessage(*NewRandomKademliaID(), "15", false)
 	network.nodes[5].SendPingMessage(*NewRandomKademliaID(), "15", false)
@@ -93,10 +93,10 @@ func TestPing(t *testing.T) {
 }
 
 func TestFindContact(t *testing.T) {
-	
+
 	network := NewMockNetwork(3, 0)
 	network.AllNodesListen()
-	
+
 	network.nodes[2].routingTable.me.ID = NewKademliaID("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	c := network.nodes[2].routingTable.me
 
@@ -104,13 +104,12 @@ func TestFindContact(t *testing.T) {
 	rpcId := *NewRandomKademliaID()
 	network.nodes[0].SendFindContactMessage(rpcId, "1", c.ID)
 
-
 	network.WaitForSettledNetwork()
 
 	ExpectSend(t, network, "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
-	
+
 	val, foundData := network.nodes[0].GetAndRemoveFindNodeReponse(rpcId)
 	if !foundData {
 		t.Fail()
@@ -125,7 +124,7 @@ func TestFindValue(t *testing.T) {
 
 	network := NewMockNetwork(1000, 0)
 	network.AllNodesListen()
-	
+
 	for i := 1; i < len(network.nodes); i += 1 {
 		network.nodes[i].Join(network.nodes[0].routingTable.me)
 	}
@@ -133,7 +132,6 @@ func TestFindValue(t *testing.T) {
 
 	data := []byte("krakel")
 	hash := Sha1toKademlia((data))
-
 
 	storedHash, err := network.nodes[1].Store(data)
 	if err != nil {
@@ -145,7 +143,6 @@ func TestFindValue(t *testing.T) {
 
 	network.WaitForSettledNetwork()
 
-
 	dat, exists, _ := network.nodes[1].LookupData(storedHash.String())
 
 	if !exists {
@@ -154,7 +151,7 @@ func TestFindValue(t *testing.T) {
 
 	if !bytes.Equal(dat, data) {
 		t.Errorf("Expected %v got %v\n", data, dat)
-	}	
+	}
 }
 
 func TestJoin(t *testing.T) {
@@ -168,7 +165,6 @@ func TestJoin(t *testing.T) {
 	network.WaitForSettledNetwork()
 	// TODO maybe check if it actually works
 }
-
 
 func TestLookupLogicMockNetwork(t *testing.T) {
 	// network := NewMockNetwork(20, 0)
@@ -240,4 +236,79 @@ func TestStoreWithNodeTracking(t *testing.T) {
 	// }
 	// t.Log("Data successfully stored locally")
 
+}
+
+func TestFindValueNoData(t *testing.T) {
+	rand.Seed(0)
+
+	network := NewMockNetwork(100, 0)
+	network.AllNodesListen()
+
+	for i := 1; i < len(network.nodes); i += 1 {
+		network.nodes[i].Join(network.nodes[0].routingTable.me)
+	}
+	network.WaitForSettledNetwork()
+
+	nonExistentKey := NewRandomKademliaID()
+
+	_, exists, closestContacts := network.nodes[0].LookupData(nonExistentKey.String())
+
+	// verify that data was not found
+	if exists {
+		t.Errorf("Expected data to not exist, but it was found")
+	}
+
+	// verify that we got some closest contacts back
+	if len(closestContacts) == 0 {
+		t.Errorf("Expected to get closest contacts when data is not found, got 0 contacts")
+	}
+
+	// verify we get exactly k (bucketSize) contacts or less if network is small
+	expectedMaxContacts := bucketSize
+	if len(network.nodes) < bucketSize {
+		expectedMaxContacts = len(network.nodes) - 1 // minus 1 because we don't include self
+	}
+
+	if len(closestContacts) > expectedMaxContacts {
+		t.Errorf("Expected at most %d contacts, got %d", expectedMaxContacts, len(closestContacts))
+	}
+
+	// verify that contacts are sorted by distance to the target key
+	for i := 0; i < len(closestContacts)-1; i++ {
+		closestContacts[i].CalcDistance(nonExistentKey)
+		closestContacts[i+1].CalcDistance(nonExistentKey)
+
+		if !closestContacts[i].Less(&closestContacts[i+1]) {
+			t.Errorf("Contacts are not sorted by distance: %s should be closer than %s to key %s",
+				closestContacts[i].ID, closestContacts[i+1].ID, nonExistentKey)
+		}
+	}
+
+	// verify that none of the returned contacts is the node itself
+	for _, contact := range closestContacts {
+		if contact.ID.Equals(network.nodes[0].routingTable.me.ID) {
+			t.Errorf("Returned contacts should not include self")
+		}
+	}
+
+	network.nodes[0].muRoutingTable.Lock()
+	expectedClosest := network.nodes[0].routingTable.FindClosestContacts(nonExistentKey, bucketSize)
+	network.nodes[0].muRoutingTable.Unlock()
+
+	// the returned contacts should match what the routing table considers closest
+	if len(closestContacts) != len(expectedClosest) {
+		t.Logf("Lookup returned %d contacts, routing table has %d closest",
+			len(closestContacts), len(expectedClosest))
+	}
+
+	// verify that the closest contact from lookup matches routing tables closest
+	if len(closestContacts) > 0 && len(expectedClosest) > 0 {
+		if !closestContacts[0].ID.Equals(expectedClosest[0].ID) {
+			t.Logf("Lookup closest: %s, Routing table closest: %s",
+				closestContacts[0].ID, expectedClosest[0].ID)
+		}
+	}
+
+	t.Logf("LookupData returned %d closest contacts when data was not found",
+		len(closestContacts))
 }
