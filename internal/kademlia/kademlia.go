@@ -93,6 +93,10 @@ type RPCFindReply struct {
 // max parallel RPCS
 const alpha = 3
 
+const TTL = 10 * 60 * time.Second
+
+//const TTL = 1 * time.Millisecond
+
 type Reply struct {
 	exists bool
 	// only important for handling full bucket updates 
@@ -112,6 +116,7 @@ type Kademlia struct {
 	routingTable *RoutingTable
 
 	TTL time.Duration
+	uploadedData map[KademliaID][]Contact
 
 	muKvStore sync.Mutex
 	kvStore map[KademliaID]Value
@@ -128,6 +133,9 @@ type Kademlia struct {
 	muFindValueResponses sync.Mutex
 	findValueResponses map[KademliaID]chan RPCFindReply
 
+	muStoreResponses sync.Mutex
+	storeResponses map[KademliaID]chan RPCStoreReply
+
 	Net Node
 }
 
@@ -138,8 +146,10 @@ func NewKademlia(address string, id *KademliaID, net Node) Kademlia {
 	k.replyResponses = make(map[KademliaID]Reply)
 	k.findNodeResponses = make(map[KademliaID]chan RPCFindReply)
 	k.findValueResponses = make(map[KademliaID]chan RPCFindReply)
+	k.storeResponses = make(map[KademliaID]chan RPCStoreReply)
 	k.Net = net
-	k.TTL = 10 * 60 * time.Second
+	k.TTL = TTL
+	k.uploadedData = make(map[KademliaID][]Contact)
 	return k
 }
 
@@ -157,6 +167,8 @@ func (kademlia *Kademlia) AddToReplyList(id KademliaID, reply Reply) {
 	kademlia.replyResponses[id] = reply
 	kademlia.muReplyResponses.Unlock()
 }
+
+// TODO maybe make all three functions below one function with a type parameter
 
 func (kademlia *Kademlia) GetAndRemoveFindNodeReponse(id KademliaID) (RPCFindReply, bool) {
 	var channel chan RPCFindReply
@@ -212,6 +224,36 @@ func (kademlia *Kademlia) GetAndRemoveFindValueReponse(id KademliaID) (RPCFindRe
 	}
 }
 
+func (kademlia *Kademlia) GetAndRemoveStoreReponse(id KademliaID) (RPCStoreReply, bool) {
+	var channel chan RPCStoreReply
+	kademlia.muStoreResponses.Lock()
+	channel = kademlia.storeResponses[id]
+	if channel == nil {
+		channel = make(chan RPCStoreReply, 1)
+		kademlia.storeResponses[id] = channel
+	}
+	kademlia.muStoreResponses.Unlock()
+
+	
+	var reply RPCStoreReply
+
+	//print whats in the channel
+	select {
+		case reply = <- channel: {
+			kademlia.muStoreResponses.Lock()
+			delete(kademlia.storeResponses, id)
+			kademlia.muStoreResponses.Unlock()
+			return reply, true
+		}
+		case <-time.After(3 * time.Second): {
+			kademlia.muStoreResponses.Lock()
+			delete(kademlia.storeResponses, id)
+			kademlia.muStoreResponses.Unlock()
+			return reply, false
+		}
+	}
+}
+// TODO maybe make all three functions below one function with a type parameter
 func (kademlia *Kademlia) AddToFindNodeReponses(id KademliaID, findNodeReply RPCFindReply) {
 	kademlia.muFindNodeResponses.Lock()
 	channel := kademlia.findNodeResponses[findNodeReply.header.RpcId]
@@ -238,6 +280,18 @@ func (kademlia *Kademlia) AddToFindValueReponses(id KademliaID, findValueReply R
 	channel <- findValueReply
 }
 
+func (kademlia *Kademlia) AddToStoreReponses(id KademliaID, storeReply RPCStoreReply) {
+	kademlia.muStoreResponses.Lock()
+	channel := kademlia.storeResponses[storeReply.header.RpcId]
+	if channel == nil {
+		channel = make(chan RPCStoreReply, 1)
+		kademlia.storeResponses[storeReply.header.RpcId] = channel
+	} else {
+		channel = kademlia.storeResponses[storeReply.header.RpcId]
+	}
+	kademlia.muStoreResponses.Unlock()
+	channel <- storeReply
+}
 
 func PartialRead[T any](reader *bytes.Reader, val *T) error {
 	len := reflect.TypeOf(*val).Size()
@@ -401,6 +455,19 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 					// var store_reply RPCStoreReply
 					kademlia.BucketUpdate(response.from_address, header.NodeId)
 					//TODO: maybe handle errors or smth
+
+					var storeReply RPCStoreReply
+					{
+						storeReply.header = header
+						/* err = PartialRead(reader, &storeReply.dataSize)
+						if err != nil {
+							log.Fatalf("%v\n", err)
+						}*/
+					}
+
+					kademlia.AddToStoreReponses(storeReply.header.RpcId, storeReply)
+
+					//kademlia.AddToFindNodeReponses(findNodeReply.header.RpcId, findNodeReply)
 				} else {
 					log.Printf("Got unexpected store reply, might have timed out\n")
 				}
@@ -499,6 +566,8 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 
 	}
 }
+
+
 
 func (kademlia *Kademlia) Refresh(bucketIndex int) {
 	bit_pos := bucketIndex % 8
@@ -691,8 +760,26 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 		return *key, fmt.Errorf("no nodes found for storage replication")
 	}
 
-	for _, c := range closestContacts {
-		kademlia.SendStoreMessage(*NewRandomKademliaID(), c.Address, data)
+	length := len(closestContacts)
+	rpcIds := make([]KademliaID, length)
+	for i, c := range closestContacts {
+		rpcIds[i] = *NewRandomKademliaID()
+		kademlia.SendStoreMessage(rpcIds[i], c.Address, data)
+		//kademlia.uploadedData[*key] = append(kademlia.uploadedData[*key], c)
+	}
+
+
+	var responses []RPCStoreReply
+
+	for _, id := range rpcIds {
+
+		response, receivedData := kademlia.GetAndRemoveStoreReponse(id)
+		if receivedData {
+			responses = append(responses, response)
+		}
+
+		//print responses
+		log.Printf("Store response: %v\n", response)
 	}
 
 	return *key, nil
