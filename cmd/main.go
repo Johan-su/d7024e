@@ -113,7 +113,7 @@ func main() {
 
 	if !isBootNode {
 		fmt.Printf("Sleeping...\n")
-		time.Sleep(2 * time.Second)
+		time.Sleep(30 * time.Second)
 		bootAddress := *bootIP+":8000"
 		fmt.Printf("Joining Network at %v %v\n", bootAddress, *bootId)
 		node.Join(kademlia.NewContact(kademlia.NewKademliaID(*bootId), bootAddress))
