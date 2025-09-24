@@ -36,13 +36,10 @@ func (oh *objectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 			} else {
 				writer.Header().Add("Location", fmt.Sprintf("/objects/%v", hash.String()))
 				writer.WriteHeader(201)
-				fmt.Printf("writer.Header(), %v\n", writer.Header())
 			}
 		}
 		case "GET": {
 			strs := strings.Split(request.URL.Path, "/")
-			fmt.Printf("strs %v\n", strs)
-			fmt.Printf("len(strs) %v\n", len(strs))
 			if len(strs) == 3 {
 				hash := strs[2]
 				dat, exists, _  := oh.node.LookupData(hash)
