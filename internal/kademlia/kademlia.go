@@ -168,129 +168,45 @@ func (kademlia *Kademlia) AddToReplyList(id KademliaID, reply Reply) {
 	kademlia.muReplyResponses.Unlock()
 }
 
-// TODO maybe make all three functions below one function with a type parameter
 
-func (kademlia *Kademlia) GetAndRemoveFindNodeReponse(id KademliaID) (RPCFindReply, bool) {
-	var channel chan RPCFindReply
-	kademlia.muFindNodeResponses.Lock()
-	channel = kademlia.findNodeResponses[id]
+func GetAndRemoveResponse[T any](id KademliaID, mapLock *sync.Mutex, responseMap map[KademliaID]chan T) (T, bool) {
+	var channel chan T
+	mapLock.Lock()
+	channel = responseMap[id]
 	if channel == nil {
-		channel = make(chan RPCFindReply, 1)
-		kademlia.findNodeResponses[id] = channel
+		channel = make(chan T, 1)
+		responseMap[id] = channel
 	}
-	kademlia.muFindNodeResponses.Unlock()
+	mapLock.Unlock()
 	
-	var reply RPCFindReply
+	var reply T
 	select {
 		case reply = <- channel: {
-			kademlia.muFindNodeResponses.Lock()
-			delete(kademlia.findNodeResponses, id)
-			kademlia.muFindNodeResponses.Unlock()
+			mapLock.Lock()
+			delete(responseMap, id)
+			mapLock.Unlock()
 			return reply, true
 		}
 		case <-time.After(3 * time.Second): {
-			kademlia.muFindNodeResponses.Lock()
-			delete(kademlia.findNodeResponses, id)
-			kademlia.muFindNodeResponses.Unlock()
+			mapLock.Lock()
+			delete(responseMap, id)
+			mapLock.Unlock()
 			return reply, false
 		}
 	}
 }
 
-func (kademlia *Kademlia) GetAndRemoveFindValueReponse(id KademliaID) (RPCFindReply, bool) {
-	var channel chan RPCFindReply
-	kademlia.muFindValueResponses.Lock()
-	channel = kademlia.findValueResponses[id]
+func AddToResponses[T any](id KademliaID, reply T, mapLock *sync.Mutex, responseMap map[KademliaID]chan T) {
+	mapLock.Lock()
+	channel := responseMap[id]
 	if channel == nil {
-		channel = make(chan RPCFindReply, 1)
-		kademlia.findValueResponses[id] = channel
-	}
-	kademlia.muFindValueResponses.Unlock()
-	
-	var reply RPCFindReply
-	select {
-		case reply = <- channel: {
-			kademlia.muFindValueResponses.Lock()
-			delete(kademlia.findValueResponses, id)
-			kademlia.muFindValueResponses.Unlock()
-			return reply, true
-		}
-		case <-time.After(3 * time.Second): {
-			kademlia.muFindValueResponses.Lock()
-			delete(kademlia.findValueResponses, id)
-			kademlia.muFindValueResponses.Unlock()
-			return reply, false
-		}
-	}
-}
-
-func (kademlia *Kademlia) GetAndRemoveStoreReponse(id KademliaID) (RPCStoreReply, bool) {
-	var channel chan RPCStoreReply
-	kademlia.muStoreResponses.Lock()
-	channel = kademlia.storeResponses[id]
-	if channel == nil {
-		channel = make(chan RPCStoreReply, 1)
-		kademlia.storeResponses[id] = channel
-	}
-	kademlia.muStoreResponses.Unlock()
-
-	
-	var reply RPCStoreReply
-
-	//print whats in the channel
-	select {
-		case reply = <- channel: {
-			kademlia.muStoreResponses.Lock()
-			delete(kademlia.storeResponses, id)
-			kademlia.muStoreResponses.Unlock()
-			return reply, true
-		}
-		case <-time.After(3 * time.Second): {
-			kademlia.muStoreResponses.Lock()
-			delete(kademlia.storeResponses, id)
-			kademlia.muStoreResponses.Unlock()
-			return reply, false
-		}
-	}
-}
-// TODO maybe make all three functions below one function with a type parameter
-func (kademlia *Kademlia) AddToFindNodeReponses(id KademliaID, findNodeReply RPCFindReply) {
-	kademlia.muFindNodeResponses.Lock()
-	channel := kademlia.findNodeResponses[findNodeReply.header.RpcId]
-	if channel == nil {
-		channel = make(chan RPCFindReply, 1)
-		kademlia.findNodeResponses[findNodeReply.header.RpcId] = channel
+		channel = make(chan T, 1)
+		responseMap[id] = channel
 	} else {
-		channel = kademlia.findNodeResponses[findNodeReply.header.RpcId]
+		channel = responseMap[id]
 	}
-	kademlia.muFindNodeResponses.Unlock()
-	channel <- findNodeReply
-}
-
-func (kademlia *Kademlia) AddToFindValueReponses(id KademliaID, findValueReply RPCFindReply) {
-	kademlia.muFindValueResponses.Lock()
-	channel := kademlia.findValueResponses[findValueReply.header.RpcId]
-	if channel == nil {
-		channel = make(chan RPCFindReply, 1)
-		kademlia.findValueResponses[findValueReply.header.RpcId] = channel
-	} else {
-		channel = kademlia.findValueResponses[findValueReply.header.RpcId]
-	}
-	kademlia.muFindValueResponses.Unlock()
-	channel <- findValueReply
-}
-
-func (kademlia *Kademlia) AddToStoreReponses(id KademliaID, storeReply RPCStoreReply) {
-	kademlia.muStoreResponses.Lock()
-	channel := kademlia.storeResponses[storeReply.header.RpcId]
-	if channel == nil {
-		channel = make(chan RPCStoreReply, 1)
-		kademlia.storeResponses[storeReply.header.RpcId] = channel
-	} else {
-		channel = kademlia.storeResponses[storeReply.header.RpcId]
-	}
-	kademlia.muStoreResponses.Unlock()
-	channel <- storeReply
+	mapLock.Unlock()
+	channel <- reply
 }
 
 func PartialRead[T any](reader *bytes.Reader, val *T) error {
@@ -465,7 +381,7 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 						}*/
 					}
 
-					kademlia.AddToStoreReponses(storeReply.header.RpcId, storeReply)
+					AddToResponses(storeReply.header.RpcId, storeReply, &kademlia.muStoreResponses, kademlia.storeResponses)
 
 					//kademlia.AddToFindNodeReponses(findNodeReply.header.RpcId, findNodeReply)
 				} else {
@@ -510,7 +426,7 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 
 					kademlia.BucketUpdate(response.from_address, header.NodeId)
 
-					kademlia.AddToFindNodeReponses(findNodeReply.header.RpcId, findNodeReply)
+					AddToResponses(findNodeReply.header.RpcId, findNodeReply, &kademlia.muFindNodeResponses, kademlia.findNodeResponses)
 				} else {
 					log.Printf("[%v] Got unexpected find node reply, might have timed out\n", meaddr)
 				}
@@ -556,8 +472,7 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 					}
 
 					kademlia.BucketUpdate(response.from_address, header.NodeId)
-					kademlia.AddToFindValueReponses(findValueReply.header.RpcId, findValueReply)
-
+					AddToResponses(findValueReply.header.RpcId, findValueReply, &kademlia.muFindValueResponses, kademlia.findValueResponses)
 				} else {
 					log.Printf("Got unexpected find value reply, might have timed out\n")
 				}
@@ -773,7 +688,7 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 
 	for _, id := range rpcIds {
 
-		response, receivedData := kademlia.GetAndRemoveStoreReponse(id)
+		response, receivedData := GetAndRemoveResponse(id, &kademlia.muStoreResponses, kademlia.storeResponses)
 		if receivedData {
 			responses = append(responses, response)
 		}
@@ -798,7 +713,7 @@ func (kademlia *Kademlia) queryDataNodes(contactsToQuery []Contact, targetHash K
 
 	for _, id := range rpcIds {
 
-		response, receivedData := kademlia.GetAndRemoveFindValueReponse(id)
+		response, receivedData := GetAndRemoveResponse(id, &kademlia.muFindValueResponses, kademlia.findValueResponses)
 		if receivedData {
 			responses = append(responses, response)
 		}
@@ -823,7 +738,7 @@ func (kademlia *Kademlia) queryNodes(contactsToQuery []Contact, targetID *Kademl
 
 	for  _, id := range rpcIds {
 
-		response, receivedData := kademlia.GetAndRemoveFindNodeReponse(id)
+		response, receivedData := GetAndRemoveResponse(id, &kademlia.muFindNodeResponses, kademlia.findNodeResponses)
 		if receivedData {
 			for _, triple := range response.contacts {
 				c := Contact{&triple.id, triple.address, nil}

@@ -110,7 +110,7 @@ func TestFindContact(t *testing.T) {
 	ExpectReceive(t, network, "1", "0", RPCTypeFindNode)
 	ExpectReceive(t, network, "0", "1", RPCTypeFindNodeReply)
 
-	val, foundData := network.nodes[0].GetAndRemoveFindNodeReponse(rpcId)
+	val, foundData := GetAndRemoveResponse(rpcId, &network.nodes[0].muFindNodeResponses, network.nodes[0].findNodeResponses)
 	if !foundData {
 		t.Fail()
 	}
