@@ -34,25 +34,26 @@ func (oh *objectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 			if err != nil {
 				log.Printf("Failed to store because of %v\n", err)
 			} else {
-				writer.WriteHeader(201)
 				writer.Header().Add("Location", fmt.Sprintf("/objects/%v", hash.String()))
-				writer.Write([]byte(""))
+				writer.WriteHeader(201)
+				fmt.Printf("writer.Header(), %v\n", writer.Header())
 			}
 		}
 		case "GET": {
-			dat := make([]byte, 255)
-			_, err := request.Body.Read(dat)
-			if err != nil {
-				log.Printf("%v\n", err)
-				return
-			}
-			dat, exists, _  := oh.node.LookupData(string(dat))
-			if exists {
-				writer.WriteHeader(200)
-				writer.Write(dat)
+			strs := strings.Split(request.URL.Path, "/")
+			fmt.Printf("strs %v\n", strs)
+			fmt.Printf("len(strs) %v\n", len(strs))
+			if len(strs) == 3 {
+				hash := strs[2]
+				dat, exists, _  := oh.node.LookupData(hash)
+				if exists {
+					writer.WriteHeader(200)
+					writer.Write(dat)
+				} else {
+					writer.WriteHeader(404)
+				}
 			} else {
 				writer.WriteHeader(404)
-				writer.Write([]byte(""))
 			}
 		}
 	}
@@ -63,8 +64,9 @@ func HttpApi(node *kademlia.Kademlia) {
 	oh := new(objectHandler)
 	oh.node = node
 	http.Handle("/objects", oh)
+	http.Handle("/objects/", oh)
 
-	err := http.ListenAndServe("localhost:80", nil)
+	err := http.ListenAndServe("0.0.0.0:80", nil)
 	if err != nil {
 		log.Fatalf("%v\n", err)
 	}
@@ -111,7 +113,7 @@ func main() {
 
 	if !isBootNode {
 		fmt.Printf("Sleeping...\n")
-		time.Sleep(15 * time.Second)
+		time.Sleep(2 * time.Second)
 		bootAddress := *bootIP+":8000"
 		fmt.Printf("Joining Network at %v %v\n", bootAddress, *bootId)
 		node.Join(kademlia.NewContact(kademlia.NewKademliaID(*bootId), bootAddress))
