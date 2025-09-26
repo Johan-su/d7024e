@@ -13,7 +13,7 @@ func TestMockNetwork(t *testing.T) {
 	node_count := 10000
 	var packet_loss float32 = 0
 
-	network := NewMockNetwork(node_count, packet_loss)
+	network := NewMockNetwork(node_count, packet_loss, 2 * time.Hour, time.Hour)
 
 	network.AllNodesListen()
 

@@ -33,7 +33,7 @@ type MockNetwork struct {
 }
 
 // the created nodes' addresses are equal to their positions in the nodes array
-func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
+func NewMockNetwork(node_count int, packet_loss float32, expiryTime time.Duration, republishTime time.Duration) *MockNetwork {
 	n := new(MockNetwork)
 	n.ip_to_queue = make(map[string]chan Message)
 	n.send_log = make(map[string][]Message)
@@ -42,7 +42,7 @@ func NewMockNetwork(node_count int, packet_loss float32) *MockNetwork {
 		address := fmt.Sprintf("%d", i)
 		mock_node := new(MockNode)
 		mock_node.network = n
-		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node))
+		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node, expiryTime, republishTime))
 		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
 	return n

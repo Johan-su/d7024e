@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"context"
 )
 
 func assertPanic(c bool, format string, a ...any) {
@@ -53,6 +54,7 @@ type RPCPing struct {
 
 type RPCStore struct {
 	header    RPCHeader
+	dataHash KademliaID
 	dataSize uint64
 	data      []byte
 }
@@ -93,10 +95,6 @@ type RPCFindReply struct {
 // max parallel RPCS
 const alpha = 3
 
-const TTL = 10 * 60 * time.Second
-
-//const TTL = 1 * time.Millisecond
-
 type Reply struct {
 	exists bool
 	// only important for handling full bucket updates 
@@ -112,11 +110,19 @@ type Value struct {
 }
 
 type Kademlia struct {
+
+	// config
+	expiryTime time.Duration
+	republishTime time.Duration
+	//
+
+
+
 	muRoutingTable sync.Mutex
 	routingTable *RoutingTable
 
-	TTL time.Duration
-	uploadedData map[KademliaID][]Contact
+	muUploadedData sync.Mutex
+	uploadedData map[KademliaID]context.CancelFunc
 
 	muKvStore sync.Mutex
 	kvStore map[KademliaID]Value
@@ -139,17 +145,21 @@ type Kademlia struct {
 	Net Node
 }
 
-func NewKademlia(address string, id *KademliaID, net Node) Kademlia {
+func NewKademlia(address string, id *KademliaID, net Node, expiryTime time.Duration, republishTime time.Duration) Kademlia {
 	var k Kademlia
 	k.routingTable = NewRoutingTable(NewContact(id, address))
+	k.uploadedData = make(map[KademliaID]context.CancelFunc)
 	k.kvStore = make(map[KademliaID]Value) 
 	k.replyResponses = make(map[KademliaID]Reply)
 	k.findNodeResponses = make(map[KademliaID]chan RPCFindReply)
 	k.findValueResponses = make(map[KademliaID]chan RPCFindReply)
 	k.storeResponses = make(map[KademliaID]chan RPCStoreReply)
 	k.Net = net
-	k.TTL = TTL
-	k.uploadedData = make(map[KademliaID][]Contact)
+	k.expiryTime = expiryTime
+	k.republishTime = republishTime
+	// if !(k.expiryTime > k.republishTime) {
+	// 	log.Fatalf("expiry time %v has to be longer than republish time %v\n", k.expiryTime, k.republishTime)
+	// }
 	return k
 }
 
@@ -219,6 +229,8 @@ func PartialRead[T any](reader *bytes.Reader, val *T) error {
 	}
 	return nil
 }
+
+
 
 //TODO: both Find RPCS can reply with lists that has the sender id in it.
 func (kademlia *Kademlia) BucketUpdate(address string, node_id KademliaID) {
@@ -298,18 +310,32 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 				var store RPCStore
 				{
 					store.header = header
+
+					err := PartialRead(reader, &store.dataHash)
+					assertPanic(err == nil, "")
+
 					err = PartialRead(reader, &store.dataSize)
-					if err != nil {
-						log.Fatalf("%v\n", err)
+					assertPanic(err == nil, "")
+
+					if store.dataSize != 0 {
+						store.data = make([]byte, store.dataSize)
+						reader.Read(store.data)
 					}
-					store.data = make([]byte, store.dataSize)
-					reader.Read(store.data)
 				}
-				
-				key := Sha1toKademlia(store.data)
-				kademlia.muKvStore.Lock()
-				kademlia.kvStore[*key] = Value{store.data, true, time.Now().Add(kademlia.TTL)}
-				kademlia.muKvStore.Unlock()
+				if store.dataSize == 0 {
+					kademlia.muKvStore.Lock()
+					v := kademlia.kvStore[store.dataHash]
+					if v.exists && v.expiry.Before(time.Now()) {
+						v.expiry = time.Now().Add(kademlia.expiryTime)
+						kademlia.kvStore[store.dataHash] = v
+					}
+					kademlia.muKvStore.Unlock()
+					
+				} else {
+					kademlia.muKvStore.Lock()
+					kademlia.kvStore[store.dataHash] = Value{store.data, true, time.Now().Add(kademlia.expiryTime)}
+					kademlia.muKvStore.Unlock()
+				}
 				// TODO maybe send back a error if it failed to store
 				kademlia.SendStoreReplyMessage(response.from_address, &header.RpcId, RPCErrorNoError)
 			}
@@ -482,7 +508,21 @@ func (kademlia *Kademlia) worker(incResponses chan Message) {
 	}
 }
 
-
+func (kademlia *Kademlia) Forget(hash string) error {
+	id := NewKademliaID(hash)
+	
+	
+	kademlia.muUploadedData.Lock()
+	cancel := kademlia.uploadedData[*id]
+	delete(kademlia.uploadedData, *id)
+	kademlia.muUploadedData.Unlock()
+	if cancel != nil {
+		cancel()
+	}  else {
+		return fmt.Errorf("tried to forget hash `%s` that is not in the node\n", hash)
+	}
+	return nil
+}
 
 func (kademlia *Kademlia) Refresh(bucketIndex int) {
 	bit_pos := bucketIndex % 8
@@ -608,7 +648,7 @@ func (kademlia *Kademlia) LookupData(hash string) ([]byte, bool, []Contact) {
 		}
 		sortByDistance(nodesWithoutData, key)
 		closestNode := nodesWithoutData[0]
-		kademlia.SendStoreMessage(*NewRandomKademliaID(), closestNode.Address, foundData)
+		kademlia.SendStoreMessage(*NewRandomKademliaID(), closestNode.Address, nil, foundData)
 	}
 
 	if dataFound {
@@ -660,13 +700,50 @@ func (kademlia *Kademlia) LookupContact(target *Contact) []Contact {
 	return getTopContacts(shortlist, bucketSize)
 }
 
+func (kademlia *Kademlia) republishWorker(ctx context.Context, dataHash KademliaID) {
+	for {
+		select {
+			case <-ctx.Done(): {
+				return
+			}
+			case <-time.After(kademlia.republishTime): {
+				//TODO maybe check if already expired
+				kademlia.muKvStore.Lock()
+				v := kademlia.kvStore[dataHash]
+				assertPanic(v.expiry.After(time.Now()), "Should never republish a expired value")
+				v.expiry = time.Now().Add(kademlia.expiryTime)
+				kademlia.kvStore[dataHash] = v
+				kademlia.muKvStore.Unlock()
+				
+				_, _, contacts := kademlia.LookupData(dataHash.String())
+			
+			
+				rpcIds := make([]KademliaID, len(contacts))
+				for i, c := range contacts {
+					rpcIds[i] = *NewRandomKademliaID()
+					kademlia.SendStoreMessage(rpcIds[i], c.Address, &dataHash, nil)
+				}
+		
+			}
+		}
+	}
+}
+
 func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 
 	key := Sha1toKademlia(data)
 
 	kademlia.muKvStore.Lock()
-	kademlia.kvStore[*key] = Value{data, true, time.Now().Add(kademlia.TTL)}
+	kademlia.kvStore[*key] = Value{data, true, time.Now().Add(kademlia.expiryTime)}
 	kademlia.muKvStore.Unlock()
+
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	kademlia.muUploadedData.Lock()
+	go kademlia.republishWorker(ctx, *key)
+	kademlia.uploadedData[*key] = cancel
+	kademlia.muUploadedData.Unlock()
+
 
 	target := NewContact(key, "")
 	closestContacts := kademlia.LookupContact(&target) // find k closest contacts to send store rpc to
@@ -679,8 +756,7 @@ func (kademlia *Kademlia) Store(data []byte) (KademliaID, error) {
 	rpcIds := make([]KademliaID, length)
 	for i, c := range closestContacts {
 		rpcIds[i] = *NewRandomKademliaID()
-		kademlia.SendStoreMessage(rpcIds[i], c.Address, data)
-		//kademlia.uploadedData[*key] = append(kademlia.uploadedData[*key], c)
+		kademlia.SendStoreMessage(rpcIds[i], c.Address, nil, data)
 	}
 
 
@@ -857,7 +933,8 @@ func (kademlia *Kademlia) SendFindDataMessage(rpcId KademliaID, address string, 
 	kademlia.Net.SendData(address, writeBuf)
 }
 
-func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, data []byte) {
+// if dataHash is nil get hash from sha1 on data
+func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, dataHash *KademliaID, data []byte) {
 	log.Printf("[%v] -> [%v] Store\n", kademlia.routingTable.me.Address, address)
 	assertPanic(kademlia.routingTable.me.Address != address, "Illegal")
 	var rpc RPCStore
@@ -868,7 +945,13 @@ func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, dat
 	reply.exists = true
 	kademlia.AddToReplyList(rpc.header.RpcId, reply) 
 	
+	
 	rpc.dataSize = uint64(len(data))
+	if dataHash == nil {
+		rpc.dataHash = *Sha1toKademlia(data)
+	} else {
+		rpc.dataHash = *dataHash
+	}
 	rpc.data = data
 
 	var writeBuf []byte
@@ -876,6 +959,9 @@ func (kademlia *Kademlia) SendStoreMessage(rpcId KademliaID, address string, dat
 
 
 	writeBuf, err = binary.Append(writeBuf, binary.NativeEndian, rpc.header)
+	assertPanic(err == nil, "%v\n", err)
+
+	writeBuf, err = binary.Append(writeBuf, binary.NativeEndian, rpc.dataHash)
 	assertPanic(err == nil, "%v\n", err)
 
 	writeBuf, err = binary.Append(writeBuf, binary.NativeEndian, rpc.dataSize)

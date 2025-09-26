@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
@@ -62,7 +63,7 @@ func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address 
 
 func TestPing(t *testing.T) {
 
-	network := NewMockNetwork(20, 0)
+	network := NewMockNetwork(20, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
 
 	network.nodes[0].SendPingMessage(*NewRandomKademliaID(), "19", false)
@@ -94,7 +95,7 @@ func TestPing(t *testing.T) {
 
 func TestFindContact(t *testing.T) {
 
-	network := NewMockNetwork(3, 0)
+	network := NewMockNetwork(3, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
 
 	network.nodes[2].routingTable.me.ID = NewKademliaID("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
@@ -122,7 +123,7 @@ func TestFindContact(t *testing.T) {
 func TestFindValue(t *testing.T) {
 	rand.Seed(0)
 
-	network := NewMockNetwork(1000, 0)
+	network := NewMockNetwork(1000, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
 
 	for i := 1; i < len(network.nodes); i += 1 {
@@ -156,7 +157,7 @@ func TestFindValue(t *testing.T) {
 
 func TestJoin(t *testing.T) {
 	//TODO maybe make mock network have a local seed
-	network := NewMockNetwork(100, 0)
+	network := NewMockNetwork(100, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
 
 	for i := 1; i < len(network.nodes); i += 1 {
@@ -241,7 +242,7 @@ func TestStoreWithNodeTracking(t *testing.T) {
 func TestFindValueNoData(t *testing.T) {
 	rand.Seed(0)
 
-	network := NewMockNetwork(100, 0)
+	network := NewMockNetwork(100, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
 
 	for i := 1; i < len(network.nodes); i += 1 {
@@ -311,4 +312,75 @@ func TestFindValueNoData(t *testing.T) {
 
 	t.Logf("LookupData returned %d closest contacts when data was not found",
 		len(closestContacts))
+}
+
+func TestExpiry(t *testing.T) {
+	network := NewMockNetwork(3, 0, time.Millisecond, time.Hour)
+	network.AllNodesListen()
+
+	for i := 1; i < len(network.nodes); i += 1 {
+		network.nodes[i].Join(network.nodes[0].routingTable.me)
+	}
+	network.WaitForSettledNetwork()
+
+	hash, err := network.nodes[0].Store([]byte("krakel"))
+	if err != nil {
+		t.Errorf("%v\n", err)
+	}
+
+	time.Sleep(time.Millisecond)
+
+	_, exists, _ := network.nodes[1].LookupData(hash.String())
+	if exists {
+		t.Errorf("expected data to have expired\n")
+	}
+}
+
+func TestRepublish(t *testing.T) {
+	network := NewMockNetwork(3, 0, 100 * time.Millisecond, 45 * time.Millisecond)
+	network.AllNodesListen()
+
+	for i := 1; i < len(network.nodes); i += 1 {
+		network.nodes[i].Join(network.nodes[0].routingTable.me)
+	}
+	network.WaitForSettledNetwork()
+
+	hash, err := network.nodes[0].Store([]byte("krakel"))
+	if err != nil {
+		t.Errorf("%v\n", err)
+	}
+
+	time.Sleep(110 * time.Millisecond)
+
+	_, exists, _ := network.nodes[1].LookupData(hash.String())
+	if !exists {
+		t.Errorf("expected data to exist\n")
+	}
+}
+
+func TestForget(t *testing.T) {
+	network := NewMockNetwork(3, 0, 100 * time.Millisecond, 45 * time.Millisecond)
+	network.AllNodesListen()
+
+	for i := 1; i < len(network.nodes); i += 1 {
+		network.nodes[i].Join(network.nodes[0].routingTable.me)
+	}
+	network.WaitForSettledNetwork()
+
+	hash, err := network.nodes[0].Store([]byte("krakel"))
+	if err != nil {
+		t.Errorf("%v\n", err)
+	}
+
+	err = network.nodes[0].Forget(hash.String())
+	if err != nil {
+		t.Errorf("Expected data to exist before forget\n")
+	}
+
+	time.Sleep(110 * time.Millisecond)
+
+	_, exists, _ := network.nodes[1].LookupData(hash.String())
+	if exists {
+		t.Errorf("expected data to have expired\n")
+	}
 }

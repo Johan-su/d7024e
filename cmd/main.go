@@ -103,7 +103,7 @@ func main() {
 
 	fmt.Printf("Kademlia Node Address %v ID %s\n", addr.String(), id.String())
 
-	node := kademlia.NewKademlia(addr.String(), id, kademlia.NewUDPNode())
+	node := kademlia.NewKademlia(addr.String(), id, kademlia.NewUDPNode(), 15 * time.Second, 10 * time.Second)
 	node.Listen()
 	go node.HandleResponse()
 
@@ -140,20 +140,16 @@ func main() {
 			node.Net.Close()
 			break
 		} else if strs[0] == "put" {
-			go func(dat []byte) {
-				hash, err := node.Store(dat)
-				if err != nil {
-					fmt.Printf("Failed to store because of %v\n", err)
-				} else {
-					fmt.Printf("data hash: `%s`\n", hash.String())
-				}
-			}([]byte(strs[1]))
+			dat := []byte(strs[1])
+			hash, err := node.Store(dat)
+			if err != nil {
+				fmt.Printf("Failed to store because of %v\n", err)
+			} else {
+				fmt.Printf("data hash: `%s`\n", hash.String())
+			}
 		} else if strs[0] == "get" {
-			go func(hash string) {
-				if len(hash) != 40 {
-					fmt.Printf("Hash has to be 20 bytes (40 hex characters) long\n")
-					return
-				}
+			hash := strs[1]
+			if len(hash) == 40 {
 				dat, exists, contacts := node.LookupData(hash)
 				if exists {
 					fmt.Printf("data: %s\n", dat)
@@ -161,7 +157,21 @@ func main() {
 				} else {
 					fmt.Printf("data not found\n")
 				}
-			}(strs[1])
+			} else {
+				fmt.Printf("Hash has to be 20 bytes (40 hex characters) long\n")
+			}
+		} else if strs[0] == "forget" {
+			hash := strs[1]
+			if len(hash) == 40 {
+				err := node.Forget(hash)
+				if err != nil {
+					fmt.Printf("%v\n", err)
+				} else {
+					fmt.Printf("Forgot %s\n", hash)
+				}
+			} else {
+				fmt.Printf("Hash has to be 20 bytes (40 hex characters) long\n")
+			}
 		} else {
 			fmt.Printf("Invalid command `%s`\n", strs[0])
 		}
