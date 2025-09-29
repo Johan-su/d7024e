@@ -6,7 +6,7 @@ import (
 )
 
 func TestFindClosestContact(t *testing.T) {
-	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
+	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"), 1)
 	contacts := []Contact{
 		NewContact(NewKademliaID("0000000100000000000000000000000000000000"), "localhost:8001"),
 		NewContact(NewKademliaID("0000000200000000000000000000000000000000"), "localhost:8002"),
@@ -25,7 +25,7 @@ func TestFindClosestContact(t *testing.T) {
 
 func TestRoutingTableContactCount(t *testing.T) {
 	amountOfContacts := 16
-	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
+	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"), 1)
 	for i := 0; i < amountOfContacts; i++ {
 		stringI := fmt.Sprintf("%02d", i)
 		contact := NewContact(NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
@@ -39,7 +39,7 @@ func TestRoutingTableContactCount(t *testing.T) {
 
 func TestRoutingTableCorrectContactsAdded(t *testing.T) {
 	amountOfContacts := 16
-	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
+	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"), 1)
 	for i := 0; i < amountOfContacts; i++ {
 		stringI := fmt.Sprintf("%02d", i)
 		contact := NewContact(NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
@@ -64,7 +64,7 @@ func TestRoutingTableCorrectContactsAdded(t *testing.T) {
 
 func TestRoutingTableNoDuplicateContacts(t *testing.T) {
 	amountOfContacts := 16
-	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"))
+	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"), 1)
 	for i := 0; i < amountOfContacts; i++ {
 		stringI := fmt.Sprintf("%02d", i)
 		contact := NewContact(NewKademliaID("0000000"+stringI+"00000000000000000000000000000000"), "localhost:800"+stringI)
@@ -79,4 +79,17 @@ func TestRoutingTableNoDuplicateContacts(t *testing.T) {
 	if len(uniqueContacts) != len(contacts) {
 		t.Fatal("Expected no duplicate contacts")
 	}
+}
+
+func TestDebugTreeVisualization(t *testing.T) {
+	me := NewContact(NewKademliaID("0000000000000000000000000000000000000000"), "me")
+	rt := NewRoutingTable(me, 20)
+
+	// add _ random contacts
+	for i := 0; i < 1000; i++ {
+		id := NewRandomKademliaID()
+		contact := NewContact(id, fmt.Sprintf("node%d", i))
+		rt.AddContact(contact)
+	}
+	rt.DebugPrintTree()
 }

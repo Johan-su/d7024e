@@ -27,27 +27,36 @@ func (bucket *bucket) RemoveContact(contact Contact) {
 func (bucket *bucket) AddContact(contact Contact) bool {
 	var exists bool
 	var element *list.Element
+
+	// Check if contact already exists
 	for e := bucket.list.Front(); e != nil; e = e.Next() {
 		nodeID := e.Value.(Contact).ID
-
-		if (contact).ID.Equals(nodeID) {
+		if contact.ID.Equals(nodeID) {
 			element = e
 			break
 		}
 	}
 
 	if element == nil {
+		// Contact doesn't exist
 		if bucket.list.Len() < bucketSize {
 			bucket.list.PushFront(contact)
+		} else {
+			// Bucket is full - implement LRU eviction
+			// Remove the least recently used (tail) and add new to front
+			bucket.list.Remove(bucket.list.Back())
+			bucket.list.PushFront(contact)
+			return false // Still return false to indicate it wasn't a simple add
 		}
 	} else {
+		// Contact exists - move to front
 		exists = true
 		bucket.list.MoveToFront(element)
 	}
 	return exists
 }
 
-// GetContactAndCalcDistance returns an array of Contacts where 
+// GetContactAndCalcDistance returns an array of Contacts where
 // the distance has already been calculated
 func (bucket *bucket) GetContactAndCalcDistance(target *KademliaID) []Contact {
 	var contacts []Contact
