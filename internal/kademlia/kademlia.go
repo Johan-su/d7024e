@@ -147,7 +147,7 @@ type Kademlia struct {
 
 func NewKademlia(address string, id *KademliaID, net Node, expiryTime time.Duration, republishTime time.Duration) Kademlia {
 	var k Kademlia
-	k.routingTable = NewRoutingTable(NewContact(id, address))
+	k.routingTable = NewRoutingTable(NewContact(id, address), 1) // TODO: Change "1" (b) to parameter
 	k.uploadedData = make(map[KademliaID]context.CancelFunc)
 	k.kvStore = make(map[KademliaID]Value) 
 	k.replyResponses = make(map[KademliaID]Reply)
@@ -238,8 +238,8 @@ func (kademlia *Kademlia) BucketUpdate(address string, node_id KademliaID) {
 	kademlia.muRoutingTable.Lock()
 	defer kademlia.muRoutingTable.Unlock()
 
-	bucket_index := kademlia.routingTable.getBucketIndex(&node_id)
-	bucket := kademlia.routingTable.buckets[bucket_index]
+	node := kademlia.routingTable.findLeafNode(&node_id)
+	bucket := node.bucket
 
 	if (bucket.Len() != bucketSize) {
 		bucket.AddContact(Contact{&node_id, address, nil})
