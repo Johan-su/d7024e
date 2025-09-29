@@ -303,6 +303,9 @@ func (routingTable *RoutingTable) getBucketIndex(id *KademliaID) int {
 func (routingTable *RoutingTable) DebugPrintTree() {
 	fmt.Println("=== Routing Table Tree Structure ===")
 	routingTable.printNode(routingTable.root, 0)
+
+	total := routingTable.countContacts(routingTable.root)
+	fmt.Printf("=== TOTAL CONTACTS IN TABLE: %d ===\n", total)
 	fmt.Println("====================================")
 }
 
@@ -351,4 +354,15 @@ func (routingTable *RoutingTable) printNode(node *TreeNode, indent int) {
 		routingTable.printNode(node.left, indent+1)
 		routingTable.printNode(node.right, indent+1)
 	}
+}
+
+// countContacts recursively sums up all contacts in the leaves.
+func (routingTable *RoutingTable) countContacts(node *TreeNode) int {
+	if node == nil {
+		return 0
+	}
+	if node.left == nil && node.right == nil {
+		return node.bucket.Len()
+	}
+	return routingTable.countContacts(node.left) + routingTable.countContacts(node.right)
 }

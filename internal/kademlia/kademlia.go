@@ -709,10 +709,10 @@ func (kademlia *Kademlia) republishWorker(ctx context.Context, dataHash Kademlia
 			case <-time.After(kademlia.republishTime): {
 				//TODO maybe check if already expired
 				kademlia.muKvStore.Lock()
-				v := kademlia.kvStore[dataHash]
 				assertPanic(v.expiry.After(time.Now()), "Should never republish a expired value")
 				v.expiry = time.Now().Add(kademlia.expiryTime)
 				kademlia.kvStore[dataHash] = v
+				v, exists := kademlia.kvStore[dataHash]
 				kademlia.muKvStore.Unlock()
 				
 				_, _, contacts := kademlia.LookupData(dataHash.String())

@@ -81,12 +81,12 @@ func TestRoutingTableNoDuplicateContacts(t *testing.T) {
 	}
 }
 
-func TestDebugTreeVisualization(t *testing.T) {
+func TestGeneralKademlia(t *testing.T) {
 	me := NewContact(NewKademliaID("0000000000000000000000000000000000000000"), "me")
-	rt := NewRoutingTable(me, 20)
+	rt := NewRoutingTable(me, 1)
 
 	// add _ random contacts
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		id := NewRandomKademliaID()
 		contact := NewContact(id, fmt.Sprintf("node%d", i))
 		rt.AddContact(contact)
