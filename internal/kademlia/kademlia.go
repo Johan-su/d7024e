@@ -145,9 +145,9 @@ type Kademlia struct {
 	Net Node
 }
 
-func NewKademlia(address string, id *KademliaID, net Node, expiryTime time.Duration, republishTime time.Duration) Kademlia {
+func NewKademlia(address string, id *KademliaID, net Node, expiryTime time.Duration, republishTime time.Duration, b int) Kademlia {
 	var k Kademlia
-	k.routingTable = NewRoutingTable(NewContact(id, address), 1) // TODO: Change "1" (b) to parameter
+	k.routingTable = NewRoutingTable(NewContact(id, address), b) // TODO: Change "1" (b) to parameter
 	k.uploadedData = make(map[KademliaID]context.CancelFunc)
 	k.kvStore = make(map[KademliaID]Value) 
 	k.replyResponses = make(map[KademliaID]Reply)

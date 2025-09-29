@@ -22,8 +22,6 @@ func (bucket *bucket) RemoveContact(contact Contact) {
 }
 
 // AddContact adds the Contact to the front of the bucket
-// or moves it to the front of the bucket if it already existed
-// returns true if it already exists
 func (bucket *bucket) AddContact(contact Contact) bool {
 	var exists bool
 	var element *list.Element

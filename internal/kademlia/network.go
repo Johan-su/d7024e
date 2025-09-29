@@ -42,7 +42,7 @@ func NewMockNetwork(node_count int, packet_loss float32, expiryTime time.Duratio
 		address := fmt.Sprintf("%d", i)
 		mock_node := new(MockNode)
 		mock_node.network = n
-		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node, expiryTime, republishTime))
+		n.nodes = append(n.nodes, NewKademlia(address, NewRandomKademliaID(), mock_node, expiryTime, republishTime, 10))
 		n.ip_to_queue[address] = make(chan Message, 10*alpha)
 	}
 	return n
