@@ -2,12 +2,15 @@ package kademlia
 
 import (
 	"bytes"
+	"io"
+	"log"
 	"math/rand"
 	"testing"
 	"time"
 )
 
 func RemoveUnordered[T any](arr []T, index int) []T {
+	log.SetOutput(io.Discard)
 	len := len(arr)
 	arr[index] = arr[len-1]
 	arr = arr[:len-1]
@@ -15,6 +18,7 @@ func RemoveUnordered[T any](arr []T, index int) []T {
 }
 
 func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
+	log.SetOutput(io.Discard)
 	found := false
 	var lh RPCHeader
 	{
@@ -38,6 +42,7 @@ func ExpectSend(t *testing.T, net *MockNetwork, address string, typ RPCType) {
 }
 
 func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address string, typ RPCType) {
+	log.SetOutput(io.Discard)
 	found := false
 	var lh RPCHeader
 	{
@@ -62,6 +67,7 @@ func ExpectReceive(t *testing.T, net *MockNetwork, address string, from_address 
 }
 
 func TestPing(t *testing.T) {
+	log.SetOutput(io.Discard)
 
 	network := NewMockNetwork(20, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
@@ -94,6 +100,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestFindContact(t *testing.T) {
+	log.SetOutput(io.Discard)
 
 	network := NewMockNetwork(3, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
@@ -121,6 +128,7 @@ func TestFindContact(t *testing.T) {
 }
 
 func TestFindValue(t *testing.T) {
+	log.SetOutput(io.Discard)
 	rand.Seed(0)
 
 	network := NewMockNetwork(1000, 0, 2 * time.Hour, time.Hour)
@@ -156,6 +164,7 @@ func TestFindValue(t *testing.T) {
 }
 
 func TestJoin(t *testing.T) {
+	log.SetOutput(io.Discard)
 	//TODO maybe make mock network have a local seed
 	network := NewMockNetwork(100, 0, 2 * time.Hour, time.Hour)
 	network.AllNodesListen()
@@ -168,6 +177,7 @@ func TestJoin(t *testing.T) {
 }
 
 func TestLookupLogicMockNetwork(t *testing.T) {
+	log.SetOutput(io.Discard)
 	// network := NewMockNetwork(20, 0)
 
 	// // create target and some initial contacts
@@ -205,6 +215,7 @@ func TestLookupLogicMockNetwork(t *testing.T) {
 }
 
 func TestStoreWithNodeTracking(t *testing.T) {
+	log.SetOutput(io.Discard)
 
 	// network := NewMockNetwork(4, 0)
 
@@ -240,6 +251,7 @@ func TestStoreWithNodeTracking(t *testing.T) {
 }
 
 func TestFindValueNoData(t *testing.T) {
+	log.SetOutput(io.Discard)
 	rand.Seed(0)
 
 	network := NewMockNetwork(100, 0, 2 * time.Hour, time.Hour)
@@ -315,6 +327,8 @@ func TestFindValueNoData(t *testing.T) {
 }
 
 func TestExpiry(t *testing.T) {
+	log.SetOutput(io.Discard)
+
 	network := NewMockNetwork(3, 0, time.Millisecond, time.Hour)
 	network.AllNodesListen()
 
@@ -337,6 +351,7 @@ func TestExpiry(t *testing.T) {
 }
 
 func TestRepublish(t *testing.T) {
+	log.SetOutput(io.Discard)
 	network := NewMockNetwork(3, 0, 100 * time.Millisecond, 45 * time.Millisecond)
 	network.AllNodesListen()
 
@@ -359,6 +374,7 @@ func TestRepublish(t *testing.T) {
 }
 
 func TestForget(t *testing.T) {
+	log.SetOutput(io.Discard)
 	network := NewMockNetwork(3, 0, 100 * time.Millisecond, 45 * time.Millisecond)
 	network.AllNodesListen()
 

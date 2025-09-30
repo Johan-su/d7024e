@@ -128,6 +128,6 @@ func TestGeneralKademlia(t *testing.T) {
 		contact := NewContact(id, fmt.Sprintf("node%d", i))
 		rt.AddContact(contact)
 	}
-	rt.DebugPrintTree()
+	// rt.DebugPrintTree()
 	// graphviz_out(rt, "output.dot")
 }
