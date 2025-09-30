@@ -2,8 +2,45 @@ package kademlia
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"testing"
+	"unsafe"
 )
+
+
+func graphviz_out(route *RoutingTable, filePath string) {
+	f, err := os.Create(filePath)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+
+	fmt.Fprintf(f, "digraph G {\n")
+
+	var nodeStack []*TreeNode
+
+	nodeStack = append(nodeStack, route.root)
+	for len(nodeStack) != 0 {
+		var x *TreeNode
+		x, nodeStack = nodeStack[len(nodeStack)-1], nodeStack[:len(nodeStack)-1]
+
+
+		fmt.Fprintf(f, "n%v [label=\"[%v]%s-%s\"]\n", uintptr(unsafe.Pointer(x)), x.depth, x.low.String(), x.high.String())
+
+		if x.left != nil {
+			fmt.Fprintf(f, "n%v -> n%v\n", uintptr(unsafe.Pointer(x)), uintptr(unsafe.Pointer(x.left)))
+			nodeStack = append(nodeStack, x.left)
+		}
+		if x.right != nil {
+			fmt.Fprintf(f, "n%v -> n%v\n", uintptr(unsafe.Pointer(x)), uintptr(unsafe.Pointer(x.right)))
+			nodeStack = append(nodeStack, x.right)
+		}
+
+	}
+
+	fmt.Fprintf(f, "}\n")
+}
+
 
 func TestFindClosestContact(t *testing.T) {
 	rt := NewRoutingTable(NewContact(NewKademliaID("FFFFFFFF00000000000000000000000000000000"), "localhost:8000"), 1)
@@ -82,8 +119,8 @@ func TestRoutingTableNoDuplicateContacts(t *testing.T) {
 }
 
 func TestGeneralKademlia(t *testing.T) {
-	me := NewContact(NewKademliaID("0000000000000000000000000000000000000000"), "me")
-	rt := NewRoutingTable(me, 1)
+	me := NewContact(NewKademliaID("ffffffffffffffffffffffffffffffffffffffff"), "me")
+	rt := NewRoutingTable(me, 3)
 
 	// add _ random contacts
 	for i := 0; i < 10000; i++ {
@@ -92,4 +129,5 @@ func TestGeneralKademlia(t *testing.T) {
 		rt.AddContact(contact)
 	}
 	rt.DebugPrintTree()
+	graphviz_out(rt, "output.dot")
 }
