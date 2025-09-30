@@ -103,7 +103,6 @@ func main() {
 
 	fmt.Printf("Kademlia Node Address %v ID %s\n", addr.String(), id.String())
 
-	node := kademlia.NewKademlia(addr.String(), id, kademlia.NewUDPNode(), 15 * time.Second, 10 * time.Second)
 	node := kademlia.NewKademlia(addr.String(), id, kademlia.NewUDPNode(), 15*time.Second, 10*time.Second, 10)
 	node.Listen()
 	go node.HandleResponse()
