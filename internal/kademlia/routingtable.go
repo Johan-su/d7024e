@@ -80,9 +80,9 @@ func (routingTable *RoutingTable) findLeafNode(id *KademliaID) *TreeNode {
 		}
 
 		if getBit(id, current.depth) == 0 {
-			current = current.left
-		} else {
 			current = current.right
+		} else {
+			current = current.left
 		}
 	}
 }
@@ -102,14 +102,14 @@ func (routingTable *RoutingTable) splitNode(node *TreeNode) {
 
 	midpoint := calcMidpoint(node.low, node.high)
 
-	node.left = &TreeNode{
+	node.right = &TreeNode{
 		low:    node.low,
 		high:   midpoint,
 		depth:  node.depth + 1,
 		bucket: newBucket(),
 	}
 
-	node.right = &TreeNode{
+	node.left = &TreeNode{
 		low:    incID(midpoint),
 		high:   node.high,
 		depth:  node.depth + 1,
@@ -118,10 +118,10 @@ func (routingTable *RoutingTable) splitNode(node *TreeNode) {
 
 	for e := node.bucket.list.Front(); e != nil; e = e.Next() {
 		contact := e.Value.(Contact)
-		if routingTable.idInRange(contact.ID, node.left.low, node.left.high) {
-			node.left.bucket.AddContact(contact)
-		} else {
+		if routingTable.idInRange(contact.ID, node.right.low, node.right.high) {
 			node.right.bucket.AddContact(contact)
+		} else {
+			node.left.bucket.AddContact(contact)
 		}
 	}
 
