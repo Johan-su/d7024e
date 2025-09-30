@@ -707,16 +707,19 @@ func (kademlia *Kademlia) republishWorker(ctx context.Context, dataHash Kademlia
 				return
 			}
 			case <-time.After(kademlia.republishTime): {
-				//TODO maybe check if already expired
+				
 				kademlia.muKvStore.Lock()
 				v, exists := kademlia.kvStore[dataHash]
 				if exists && v.expiry.After(time.Now()) {
     				v.expiry = time.Now().Add(kademlia.expiryTime)
     				kademlia.kvStore[dataHash] = v
 				} else {
-    				// just return if the value has expired 
-    				kademlia.muKvStore.Unlock()
-    				return
+					kademlia.muKvStore.Unlock()
+
+					kademlia.muUploadedData.Lock()
+					delete(kademlia.uploadedData, dataHash)
+					kademlia.muUploadedData.Unlock()
+					return
 				}
 				kademlia.muKvStore.Unlock()
 				
