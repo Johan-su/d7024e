@@ -129,5 +129,5 @@ func TestGeneralKademlia(t *testing.T) {
 		rt.AddContact(contact)
 	}
 	rt.DebugPrintTree()
-	graphviz_out(rt, "output.dot")
+	// graphviz_out(rt, "output.dot")
 }
