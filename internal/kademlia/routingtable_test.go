@@ -119,7 +119,7 @@ func TestRoutingTableNoDuplicateContacts(t *testing.T) {
 }
 
 func TestGeneralKademlia(t *testing.T) {
-	me := NewContact(NewKademliaID("ffffffffffffffffffffffffffffffffffffffff"), "me")
+	me := NewContact(NewKademliaID("0000000000000000000000000000000000000000"), "me")
 	rt := NewRoutingTable(me, 3)
 
 	// add _ random contacts
